@@ -2,7 +2,7 @@ import json
 import logging
 from google import genai
 from config.settings import GEMINI_API_KEY
-from config.prompt_templates import BATCH_SCRIPT_GEN_PROMPT, VIDEO_CLONE_REMAKE_PROMPT
+from config.prompt_templates import BATCH_SCRIPT_GEN_PROMPT, BATCH_SCRIPT_GEN_WITH_CONTEXT_PROMPT, VIDEO_CLONE_REMAKE_PROMPT
 from core.db import DatabaseManager, JobStatus
 
 logger = logging.getLogger(__name__)
@@ -20,30 +20,37 @@ class ScriptEngine:
         else:
             self.client = None
 
-    def _generate_fallback_scripts(self, topic: str, count: int = 10) -> list:
+    def _generate_fallback_scripts(self, topic: str, count: int = 10, keep_context: bool = True, custom_context: str = "") -> list:
         """Generate smart fallback scripts when GEMINI_API_KEY is not configured"""
         scripts = []
+        context_prefix = f" [{custom_context}]" if custom_context else ""
         for i in range(1, count + 1):
+            episode_title = f"Tập {i}: {topic}" if keep_context else f"{topic} - Mẹo Hay #{i}"
             scripts.append({
-                "title": f"{topic} - Mẹo Hay #{i}",
-                "hook": f"Bạn có biết điều này về {topic} chưa?",
-                "voiceover_text": f"Khám phá ngay bí quyết đỉnh cao về {topic} năm 2026. Áp dụng ngay hôm nay để đạt hiệu quả gấp đôi!",
-                "veo_prompt": f"Continuous 9:16 vertical 4k cinematic shot showing futuristic concept of {topic}, dramatic lighting, hyper-realistic, 30fps",
-                "tags": [f"#{topic.replace(' ', '')}", "#Shorts", "#AI2026", "#VeoStudio"]
+                "title": episode_title,
+                "hook": f"Tập {i}: Bạn có biết bí mật này về {topic} chưa?",
+                "voiceover_text": f"Tập {i}: Khám phá ngay bí quyết đỉnh cao về {topic}{context_prefix} năm 2026. Hãy theo dõi tập tiếp theo!",
+                "veo_prompt": f"Continuous 9:16 vertical 4k cinematic shot, episode {i} of continuous series about {topic}, same consistent character and environment context{context_prefix}, dramatic lighting, hyper-realistic, 30fps",
+                "tags": [f"#{topic.replace(' ', '')}", "#Shorts", f"#SeriesPart{i}", "#VeoStudio"]
             })
         return scripts
 
-    def generate_batch_scripts(self, topic: str, count: int = 10) -> list:
-        """Generate a batch of 10s video scripts from a single topic prompt"""
+    def generate_batch_scripts(self, topic: str, count: int = 10, keep_context: bool = True, custom_context: str = "") -> list:
+        """Generate a batch of 10s video scripts maintaining storyline & character context"""
         if not self.client:
             logger.info("Dùng Template Script Engine Fallback (Chưa nạp GEMINI_API_KEY)")
-            return self._generate_fallback_scripts(topic, count)
+            return self._generate_fallback_scripts(topic, count, keep_context=keep_context, custom_context=custom_context)
 
-        prompt = BATCH_SCRIPT_GEN_PROMPT.format(topic=topic, count=count)
+        context_instruction = f"Mô tả nhân vật / bối cảnh cố định cần khóa context: '{custom_context}'" if custom_context else "Tự suy luận và cố định 1 mô tả nhân vật chính và bối cảnh không gian đặc trưng xuyên suốt cả chuỗi video."
+
+        if keep_context:
+            prompt = BATCH_SCRIPT_GEN_WITH_CONTEXT_PROMPT.format(topic=topic, count=count, context_instruction=context_instruction)
+        else:
+            prompt = BATCH_SCRIPT_GEN_PROMPT.format(topic=topic, count=count)
 
         try:
             response = self.client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config={
                     'response_mime_type': 'application/json',
@@ -60,30 +67,35 @@ class ScriptEngine:
             return scripts
         except Exception as e:
             logger.error(f"Lỗi gọi Gemini API ({e}), chuyển sang fallback script...")
-            return self._generate_fallback_scripts(topic, count)
+            return self._generate_fallback_scripts(topic, count, keep_context=keep_context, custom_context=custom_context)
 
-    def remake_script(self, transcript: str, vision_description: str) -> dict:
-        """Remake a cloned video transcript/description into a new fresh 10s script"""
+    def remake_script(self, transcript: str, vision_description: str, duration_sec: float = 10.0) -> dict:
+        """Remake a cloned video transcript/description, preserving original duration and refining text slightly"""
+        duration_int = max(int(round(duration_sec)), 3)
+        clean_transcript = transcript.strip() if transcript else ""
+        
         if not self.client:
+            default_voiceover = clean_transcript if clean_transcript and len(clean_transcript) > 5 else "Khám phá nội dung ấn tượng nhất năm 2026!"
             return {
                 "title": "TikTok Video Remake AI",
-                "voiceover_text": f"Nội dung tái tạo độc đáo từ video gốc: {transcript[:40]}... Khám phá xu hướng mới nhất năm 2026!",
-                "veo_prompt": "Continuous 9:16 vertical video shot, 4k resolution, cinematic lighting, hyper-realistic motion",
+                "voiceover_text": default_voiceover,
+                "veo_prompt": f"Continuous 9:16 vertical video shot, 4k resolution, cinematic lighting, duration {duration_int}s: {vision_description}",
                 "tags": ["#Remake", "#Shorts", "#AI2026"]
             }
 
         prompt = VIDEO_CLONE_REMAKE_PROMPT.format(
-            transcript=transcript or "Không có thoại",
+            duration_sec=duration_int,
+            transcript=clean_transcript or "Không có thoại",
             vision_description=vision_description or "Video ngắn ấn tượng"
         )
 
         try:
             response = self.client.models.generate_content(
-                model='gemini-1.5-flash',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config={
                     'response_mime_type': 'application/json',
-                    'temperature': 0.8
+                    'temperature': 0.7
                 }
             )
 
@@ -95,10 +107,11 @@ class ScriptEngine:
             return json.loads(text.strip())
         except Exception as e:
             logger.error(f"Lỗi parse JSON remake script: {e}")
+            default_voiceover = clean_transcript if clean_transcript and len(clean_transcript) > 5 else "Nội dung tinh chỉnh lôi cuốn hơn năm 2026!"
             return {
                 "title": "TikTok Video Remake AI",
-                "voiceover_text": "Nội dung tái tạo độc đáo năm 2026!",
-                "veo_prompt": "Continuous 9:16 vertical video shot, 4k resolution",
+                "voiceover_text": default_voiceover,
+                "veo_prompt": f"Continuous 9:16 vertical video shot, 4k resolution, duration {duration_int}s",
                 "tags": ["#Remake", "#Shorts"]
             }
 
