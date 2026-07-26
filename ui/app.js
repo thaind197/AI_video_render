@@ -1499,10 +1499,14 @@ async function openFbProfileModal(jobId) {
     // Set video name in modal header
     const modal = document.getElementById("fb-profile-modal");
     const nameEl = document.getElementById("fb-modal-video-name");
+    const captionEl = document.getElementById("fb-modal-caption");
+    const job = currentJobs.find(j => j.id === jobId);
+
     if (nameEl) {
-        // Lấy title từ job list đang cache
-        const job = currentJobs.find(j => j.id === jobId);
         nameEl.textContent = `Video: ${job ? (job.title || `#${jobId}`) : `Job #${jobId}`}`;
+    }
+    if (captionEl) {
+        captionEl.value = job ? ((job.title ? job.title + "\n\n" : "") + (job.voiceover_text || "")).trim() : "";
     }
 
     // Show modal
@@ -1578,6 +1582,7 @@ async function executePostToProfiles() {
     if (profileIds.length === 0) { showToast("Chọn ít nhất 1 profile!", "error"); return; }
 
     const maxWorkers = parseInt(document.getElementById("fb-modal-max-workers")?.value || "3");
+    const customCaption = (document.getElementById("fb-modal-caption")?.value || "").trim();
     const postBtn = document.getElementById("fb-modal-post-btn");
     if (postBtn) { postBtn.disabled = true; postBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang gửi...'; }
 
@@ -1585,7 +1590,12 @@ async function executePostToProfiles() {
         const res = await fetch(`${API_BASE}/api/social/post-to-profiles`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ job_id: _fbModalJobId, profile_ids: profileIds, max_workers: maxWorkers })
+            body: JSON.stringify({
+                job_id: _fbModalJobId,
+                profile_ids: profileIds,
+                max_workers: maxWorkers,
+                custom_caption: customCaption
+            })
         });
         const data = await res.json();
         if (res.ok) {
@@ -1757,9 +1767,14 @@ async function openTikTokProfileModal(jobId) {
 
     const modal = document.getElementById("tiktok-profile-modal");
     const nameEl = document.getElementById("tiktok-modal-video-name");
+    const captionEl = document.getElementById("tiktok-modal-caption");
+    const job = currentJobs.find(j => j.id === jobId);
+
     if (nameEl) {
-        const job = currentJobs.find(j => j.id === jobId);
         nameEl.textContent = `Video: ${job ? (job.title || `#${jobId}`) : `Job #${jobId}`}`;
+    }
+    if (captionEl) {
+        captionEl.value = job ? ((job.title ? job.title + "\n\n" : "") + (job.voiceover_text || "")).trim() : "";
     }
 
     if (modal) modal.style.display = "flex";
@@ -1831,6 +1846,7 @@ async function executePostToTikTokProfiles() {
     if (profileIds.length === 0) { showToast("Chọn ít nhất 1 profile TikTok!", "error"); return; }
 
     const maxWorkers = parseInt(document.getElementById("tiktok-modal-max-workers")?.value || "3");
+    const customCaption = (document.getElementById("tiktok-modal-caption")?.value || "").trim();
     const postBtn = document.getElementById("tiktok-modal-post-btn");
     if (postBtn) { postBtn.disabled = true; postBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang gửi...'; }
 
@@ -1838,7 +1854,12 @@ async function executePostToTikTokProfiles() {
         const res = await fetch(`${API_BASE}/api/social/post-to-tiktok-profiles`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ job_id: _tiktokModalJobId, profile_ids: profileIds, max_workers: maxWorkers })
+            body: JSON.stringify({
+                job_id: _tiktokModalJobId,
+                profile_ids: profileIds,
+                max_workers: maxWorkers,
+                custom_caption: customCaption
+            })
         });
         const data = await res.json();
         if (res.ok) {

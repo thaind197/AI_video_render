@@ -723,6 +723,7 @@ class PostToProfilesRequest(BaseModel):
     job_id: int
     profile_ids: list   # ["default", "abc123", "def456"]
     max_workers: int = 3
+    custom_caption: str = None
 
 @app.post("/api/social/post-to-profiles")
 def post_to_profiles(req: PostToProfilesRequest, background_tasks: BackgroundTasks):
@@ -739,13 +740,16 @@ def post_to_profiles(req: PostToProfilesRequest, background_tasks: BackgroundTas
         raise HTTPException(status_code=400, detail="Chưa chọn profile nào")
 
     import json as _json
-    title = (job.get("title") or "").strip()
-    voiceover = (job.get("voiceover_text") or "").strip()
-    base = f"{title}\n\n" if title else ""
-    remaining = 2000 - len(base)
-    if len(voiceover) > remaining:
-        voiceover = voiceover[:remaining].rsplit(' ', 1)[0] + "..."
-    caption = base + voiceover
+    if req.custom_caption and req.custom_caption.strip():
+        caption = req.custom_caption.strip()
+    else:
+        title = (job.get("title") or "").strip()
+        voiceover = (job.get("voiceover_text") or "").strip()
+        base = f"{title}\n\n" if title else ""
+        remaining = 2000 - len(base)
+        if len(voiceover) > remaining:
+            voiceover = voiceover[:remaining].rsplit(' ', 1)[0] + "..."
+        caption = base + voiceover
 
     raw_tags = job.get("tags", [])
     if isinstance(raw_tags, str):
@@ -816,13 +820,16 @@ def post_to_tiktok_profiles(req: PostToProfilesRequest, background_tasks: Backgr
         raise HTTPException(status_code=400, detail="Chưa chọn profile TikTok nào")
 
     import json as _json
-    title = (job.get("title") or "").strip()
-    voiceover = (job.get("voiceover_text") or "").strip()
-    base = f"{title}\n\n" if title else ""
-    remaining = 2000 - len(base)
-    if len(voiceover) > remaining:
-        voiceover = voiceover[:remaining].rsplit(' ', 1)[0] + "..."
-    caption = base + voiceover
+    if req.custom_caption and req.custom_caption.strip():
+        caption = req.custom_caption.strip()
+    else:
+        title = (job.get("title") or "").strip()
+        voiceover = (job.get("voiceover_text") or "").strip()
+        base = f"{title}\n\n" if title else ""
+        remaining = 2000 - len(base)
+        if len(voiceover) > remaining:
+            voiceover = voiceover[:remaining].rsplit(' ', 1)[0] + "..."
+        caption = base + voiceover
 
     raw_tags = job.get("tags", [])
     if isinstance(raw_tags, str):
