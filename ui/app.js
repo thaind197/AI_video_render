@@ -680,9 +680,9 @@ function renderLibraryGrid(jobs) {
 
         const tiktokBtn = job.tiktok_posted
             ? `<span style="font-size:11px;color:#52c41a;"><i class="fa-solid fa-circle-check"></i> TikTok</span>`
-            : `<button class="ant-btn" style="font-size:11px;padding:3px 8px;height:auto;background:#ee1d52;color:#fff;border-color:#ee1d52;"
-                onclick="event.stopPropagation(); testPostJob(${job.id},'tiktok')">
-                <i class="fa-brands fa-tiktok"></i> TikTok
+            : `<button class="ant-btn" style="font-size:11px;padding:3px 8px;height:auto;background:#fe2c55;color:#fff;border-color:#fe2c55;"
+                onclick="event.stopPropagation(); postVideoToTikTok(${job.id})">
+                <i class="fa-brands fa-tiktok"></i> Đăng TikTok
                </button>`;
 
         card.innerHTML = `
@@ -845,8 +845,8 @@ function initForms() {
             const voiceoverCb = document.getElementById("clone-voiceover");
             const subtitleCb = document.getElementById("clone-subtitle");
 
-            const add_voiceover = voiceoverCb ? voiceoverCb.checked : true;
-            const add_subtitle = subtitleCb ? subtitleCb.checked : true;
+            const add_voiceover = voiceoverCb ? voiceoverCb.checked : false;
+            const add_subtitle = subtitleCb ? subtitleCb.checked : false;
 
             try {
                 const res = await fetch(`${API_BASE}/api/clone-video`, {
@@ -1176,7 +1176,7 @@ function openPreviewModal(jobId) {
         tiktokBtn.onclick = (e) => {
             e.stopPropagation();
             document.getElementById("video-modal").style.display = "none";
-            testPostJob(job.id, 'tiktok');
+            postVideoToTikTok(job.id);
         };
     }
     if (xBtn) {

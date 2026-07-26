@@ -67,8 +67,8 @@ class PromptBatchRequest(BaseModel):
 
 class CloneVideoRequest(BaseModel):
     url: str
-    add_voiceover: bool = True
-    add_subtitle: bool = True
+    add_voiceover: bool = False
+    add_subtitle: bool = False
 
 class DeleteBatchRequest(BaseModel):
     job_ids: list[int]
