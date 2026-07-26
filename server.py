@@ -90,10 +90,7 @@ class SocialLoginRequest(BaseModel):
 class SocialLogoutRequest(BaseModel):
     platform: str
 
-class FbSelectPageRequest(BaseModel):
-    page_id: str
-    page_name: str
-    page_access_token: str
+
 
 # API Endpoints
 @app.get("/api/stats")
@@ -697,91 +694,7 @@ def get_fb_post_logs(job_id: int):
 
 # ─── (end of FB multi-profile endpoints) ───────────────────────────────────
 
-# ─── Facebook: Scan Pages via Graph API ───
-_fb_scan_result: dict = {"status": "idle", "pages": [], "error": None}
 
-@app.post("/api/social/fb-scan-pages")
-def fb_scan_pages(background_tasks: BackgroundTasks):
-    """Mở browser session đã đăng nhập, bắt token, lấy danh sách Pages"""
-    global _fb_scan_result
-    _fb_scan_result = {"status": "scanning", "pages": [], "error": None}
-
-    def _do_scan():
-        global _fb_scan_result
-        try:
-            from publishers.fb_token_extractor import scan_facebook_pages
-            result = scan_facebook_pages()
-            if result["success"]:
-                _fb_scan_result = {
-                    "status": "done",
-                    "pages": result["pages"],
-                    "error": None,
-                }
-            else:
-                _fb_scan_result = {
-                    "status": "error",
-                    "pages": [],
-                    "error": result["error"],
-                }
-        except Exception as e:
-            _fb_scan_result = {"status": "error", "pages": [], "error": str(e)}
-
-    background_tasks.add_task(_do_scan)
-    return {"status": "success", "message": "Đang quét Pages Facebook, vui lòng đợi..."}
-
-@app.get("/api/social/fb-scan-result")
-def fb_scan_result():
-    """Poll endpoint để lấy kết quả scan"""
-    return {"status": "success", "data": _fb_scan_result}
-
-@app.post("/api/social/fb-select-page")
-def fb_select_page(req: FbSelectPageRequest):
-    """Lưu Page đã chọn (ID + token) vào .env để dùng Graph API"""
-    try:
-        update_env_settings(
-            FB_PAGE_ID=req.page_id,
-            FB_PAGE_NAME=req.page_name,
-            FB_PAGE_ACCESS_TOKEN=req.page_access_token,
-        )
-        reload_settings()
-        logger.info(f"[FB] Đã chọn Page: '{req.page_name}' (ID: {req.page_id})")
-        return {
-            "status": "success",
-            "message": f"Đã lưu Page '{req.page_name}'. Từ nay sẽ đăng via Graph API!",
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/social/fb-open-explorer")
-def fb_open_explorer(background_tasks: BackgroundTasks):
-    """Mở Facebook Graph API Explorer trong browser với session đã đăng nhập"""
-    def _open():
-        try:
-            from playwright.sync_api import sync_playwright
-            from config.settings import FACEBOOK_SESSION_DIR
-            with sync_playwright() as p:
-                ctx = p.chromium.launch_persistent_context(
-                    user_data_dir=str(FACEBOOK_SESSION_DIR),
-                    headless=False,
-                    no_viewport=True,
-                    args=['--start-maximized', '--disable-blink-features=AutomationControlled', '--no-sandbox'],
-                )
-                page = ctx.new_page()
-                page.goto(
-                    "https://developers.facebook.com/tools/explorer/?method=GET&path=me%2Faccounts&version=v20.0",
-                    wait_until="domcontentloaded", timeout=30000
-                )
-                logger.info("[FB Explorer] Đã mở Graph API Explorer. Chờ user tạo token...")
-                try:
-                    page.wait_for_event("close", timeout=600000)
-                except Exception:
-                    pass
-                ctx.close()
-        except Exception as e:
-            logger.error(f"[FB Explorer] Lỗi: {e}")
-
-    background_tasks.add_task(_open)
-    return {"status": "success", "message": "Đang mở Facebook Graph API Explorer..."}
 
 # ─── Video Stream API (Smart — works for both clone & generated videos) ───
 @app.get("/api/video-stream/{job_id}")
