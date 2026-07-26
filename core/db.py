@@ -88,6 +88,20 @@ class DatabaseManager:
                 error_msg TEXT
             )
             """)
+
+            # tiktok_post_logs: track per-profile posting per job for TikTok
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tiktok_post_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                profile_id TEXT NOT NULL,
+                profile_name TEXT DEFAULT '',
+                status TEXT DEFAULT 'pending',
+                posted_at TEXT,
+                error_msg TEXT
+            )
+            """)
+            conn.commit()
             conn.commit()
 
     def create_job(self, source_type: str, source_input: str, title: str = "", voiceover_text: str = "", veo_prompt: str = "", tags: list = None, voice: str = "vi-VN-HoaiMyNeural", style: str = "cinematic", add_voiceover: bool = True, add_subtitle: bool = True) -> int:
@@ -205,6 +219,43 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT * FROM fb_post_logs WHERE job_id = ? ORDER BY id ASC",
+                (job_id,)
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    # ─────────────────────────────────────────────────────────
+    # TikTok Post Logs — per-profile, per-job tracking
+    # ─────────────────────────────────────────────────────────
+    def log_tiktok_post(self, job_id: int, profile_id: str, profile_name: str = "") -> int:
+        """Create a pending log entry for TikTok. Returns log_id."""
+        now = datetime.now().isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO tiktok_post_logs (job_id, profile_id, profile_name, status, posted_at)
+                VALUES (?, ?, ?, 'pending', ?)
+            """, (job_id, profile_id, profile_name, now))
+            conn.commit()
+            return cursor.lastrowid
+
+    def update_tiktok_post_log(self, log_id: int, status: str, error_msg: str = None):
+        """Update status: pending → posting → success | failed"""
+        now = datetime.now().isoformat()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE tiktok_post_logs
+                SET status = ?, posted_at = ?, error_msg = ?
+                WHERE id = ?
+            """, (status, now, error_msg, log_id))
+            conn.commit()
+
+    def get_tiktok_post_logs(self, job_id: int) -> list:
+        """Get all TikTok profile logs for a specific job."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM tiktok_post_logs WHERE job_id = ? ORDER BY id ASC",
                 (job_id,)
             )
             return [dict(r) for r in cursor.fetchall()]

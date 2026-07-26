@@ -61,13 +61,112 @@ class VideoCloner:
                 self._whisper_model = None
         return self._whisper_model
 
+    def _has_audio(self, video_path: Path) -> bool:
+        """Check if video file contains an audio stream"""
+        if not video_path or not video_path.exists():
+            return False
+        try:
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            res = subprocess.run([ffmpeg_exe, "-i", str(video_path)], capture_output=True, text=True, timeout=5)
+            return "Audio:" in res.stderr
+        except Exception:
+            return False
+
+    def _ensure_h264(self, file_path: Path, target_path: Path) -> Path:
+        """Ensure video file is standard web-compatible H.264 (AVC) with AAC audio"""
+        if not file_path.exists():
+            return file_path
+        try:
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            probe = subprocess.run([ffmpeg_exe, "-i", str(file_path)], capture_output=True, text=True, timeout=10)
+            is_hevc = "hevc" in probe.stderr.lower() or "hvc1" in probe.stderr.lower()
+            needs_convert = is_hevc or file_path.suffix.lower() != ".mp4"
+            if not needs_convert:
+                if file_path.resolve() != target_path.resolve():
+                    if target_path.exists():
+                        target_path.unlink(missing_ok=True)
+                    file_path.rename(target_path)
+                    return target_path
+                return file_path
+
+            logger.info(f"Chuyển đổi video sang chuẩn Web H.264 (AVC): {file_path.name}...")
+            tmp_target = target_path.with_name(target_path.stem + "_tmp_h264.mp4")
+            has_audio = "Audio:" in probe.stderr
+            audio_opts = ["-c:a", "aac"] if has_audio else []
+            cmd = [
+                ffmpeg_exe, "-y",
+                "-threads", "2",
+                "-i", str(file_path),
+                "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                *audio_opts,
+                str(tmp_target)
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            if tmp_target.exists():
+                if file_path.exists() and file_path.resolve() != tmp_target.resolve():
+                    try: file_path.unlink(missing_ok=True)
+                    except Exception: pass
+                if target_path.exists() and target_path.resolve() != tmp_target.resolve():
+                    try: target_path.unlink(missing_ok=True)
+                    except Exception: pass
+                tmp_target.rename(target_path)
+                return target_path
+        except Exception as e:
+            logger.warning(f"Lỗi transcode H.264 cho {file_path.name}: {e}")
+        return file_path
+
     def download_video(self, url: str, job_id: int) -> Path:
-        """Download video from URL (TikTok/Shorts/Reels) using yt-dlp with automatic format & header handling"""
+        """Download video from URL (TikTok/Shorts/Reels) with guaranteed audio stream"""
         out_target = DOWNLOADS_DIR / f"clone_{job_id}.mp4"
         out_tmpl = str(DOWNLOADS_DIR / f"clone_{job_id}.%(ext)s")
 
+        # 1. Prioritize TikWm API for TikTok videos to guarantee no-watermark video with full audio stream
+        if "tiktok.com" in url.lower():
+            try:
+                logger.info(f"Tải video TikTok trực tiếp qua TikWm API cho Job #{job_id}...")
+                resp = requests.post("https://www.tikwm.com/api/", data={"url": url}, timeout=15).json()
+                if resp.get("code") == 0 and "data" in resp and "play" in resp["data"]:
+                    play_url = resp["data"]["play"]
+                    if not play_url.startswith("http"):
+                        play_url = "https://www.tikwm.com" + play_url
+                    v_data = requests.get(play_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30).content
+                    if len(v_data) > 100000:
+                        with open(out_target, "wb") as f:
+                            f.write(v_data)
+                        if self._has_audio(out_target):
+                            logger.info(f"Đã tải thành công video TikTok không logo + có âm thanh qua TikWm API ({len(v_data)} bytes)")
+                            return self._ensure_h264(out_target, out_target)
+                        else:
+                            logger.warning("TikWm video không có audio, chuyển sang tải audio riêng từ music URL...")
+                            music_url = resp["data"].get("music")
+                            if music_url:
+                                m_data = requests.get(music_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20).content
+                                m_path = DOWNLOADS_DIR / f"tikwm_music_{job_id}.mp3"
+                                with open(m_path, "wb") as mf:
+                                    mf.write(m_data)
+                                merged_target = DOWNLOADS_DIR / f"clone_{job_id}_merged.mp4"
+                                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+                                cmd_merge = [
+                                    ffmpeg_exe, "-y",
+                                    "-i", str(out_target),
+                                    "-i", str(m_path),
+                                    "-c:v", "copy", "-c:a", "aac",
+                                    str(merged_target)
+                                ]
+                                subprocess.run(cmd_merge, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                                if merged_target.exists():
+                                    try: out_target.unlink(missing_ok=True)
+                                    except Exception: pass
+                                    merged_target.rename(out_target)
+                                    try: m_path.unlink(missing_ok=True)
+                                    except Exception: pass
+                                    return self._ensure_h264(out_target, out_target)
+            except Exception as e:
+                logger.warning(f"TikWm API error: {e}")
+
+        # 2. Fallback / non-TikTok downloader using yt-dlp ('best' format to include audio)
         ydl_opts = {
-            'format': 'bestvideo*+bestaudio/best',
+            'format': 'best',  # 'best' gets single container stream with both video + audio
             'outtmpl': out_tmpl,
             'quiet': True,
             'no_warnings': True,
@@ -91,51 +190,20 @@ class VideoCloner:
             logger.warning(f"yt-dlp download error cho url '{url}': {e}")
 
         if downloaded_file and downloaded_file.exists():
-            if downloaded_file.suffix.lower() == ".mp4":
-                return downloaded_file
+            return self._ensure_h264(downloaded_file, out_target)
 
-            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-            cmd = [
-                ffmpeg_exe, "-y",
-                "-i", str(downloaded_file),
-                "-c:v", "libx264", "-preset", "fast",
-                "-c:a", "aac",
-                str(out_target)
-            ]
-            try:
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-                downloaded_file.unlink(missing_ok=True)
-                return out_target
-            except Exception:
-                return downloaded_file
-
-        # Fallback 1: TikWm API for direct TikTok no-watermark video download
-        if "tiktok.com" in url.lower():
-            try:
-                logger.info(f"Tải video TikTok trực tiếp qua TikWm API cho Job #{job_id}...")
-                resp = requests.post("https://www.tikwm.com/api/", data={"url": url}, timeout=15).json()
-                if resp.get("code") == 0 and "data" in resp and "play" in resp["data"]:
-                    play_url = resp["data"]["play"]
-                    if not play_url.startswith("http"):
-                        play_url = "https://www.tikwm.com" + play_url
-                    v_data = requests.get(play_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=30).content
-                    if len(v_data) > 100000:
-                        with open(out_target, "wb") as f:
-                            f.write(v_data)
-                        logger.info(f"Đã tải thành công video TikTok không logo qua TikWm API ({len(v_data)} bytes)")
-                        return out_target
-            except Exception as e:
-                logger.warning(f"TikWm API fallback error: {e}")
-
-        # Fallback: Generate synthetic 9:16 sample video for testing if URL is inaccessible
+        # 3. Final Fallback: Generate synthetic 9:16 sample video for testing if URL is inaccessible
         logger.info(f"Tự động sinh video mẫu 9:16 fallback cho Clone Job #{job_id}")
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         cmd = [
             ffmpeg_exe, "-y",
             "-f", "lavfi",
             "-i", "rgbtestsrc=size=1080x1920:rate=30:duration=10",
+            "-f", "lavfi",
+            "-i", "anullsrc=r=44100:cl=stereo",
             "-vf", "boxblur=40:40,hue=h=t*50:s=1.8,eq=contrast=1.25:brightness=0.02:saturation=1.8",
             "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-t", "10",
             str(out_target)
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)

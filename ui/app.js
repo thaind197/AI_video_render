@@ -267,7 +267,7 @@ async function fetchJobsAndStats() {
         const statsRes = await fetch(`${API_BASE}/api/stats`);
         if (statsRes.ok) {
             const statsData = await statsRes.json();
-            updateStatisticsUI(statsData.data, statsData.is_engine_running);
+            updateStatisticsUI(statsData.data, statsData.is_engine_running, statsData.social);
         }
 
         // Fetch Jobs List
@@ -284,7 +284,7 @@ async function fetchJobsAndStats() {
 }
 
 // Update Statistics Cards & Indicators
-function updateStatisticsUI(stats, running) {
+function updateStatisticsUI(stats, running, social) {
     if (!stats) return;
 
     isEngineRunning = running;
@@ -295,10 +295,37 @@ function updateStatisticsUI(stats, running) {
     const published = stats.PUBLISHED || 0;
     const quotaWaiting = stats.QUOTA_WAIT || 0;
 
-    document.getElementById("stat-total").textContent = total;
-    document.getElementById("stat-generating").textContent = generating;
-    document.getElementById("stat-rendered").textContent = rendered;
-    document.getElementById("stat-published").textContent = published;
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl("stat-total", total);
+    setEl("stat-generating", generating);
+    setEl("stat-rendered", rendered);
+    setEl("stat-published", published);
+
+    // Update social sub-text
+    if (social) {
+        const subEl = document.getElementById("stat-social-sub");
+        if (subEl) subEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> FB: ${social.fb} | TikTok: ${social.tiktok} | X: ${social.x}`;
+        const fbTag = document.getElementById("fb-posted-tag");
+        if (fbTag) fbTag.textContent = `Đã Đăng: ${social.fb} Reels`;
+        const ttTag = document.getElementById("tiktok-posted-tag");
+        if (ttTag) ttTag.textContent = `Đã Đăng: ${social.tiktok} Videos`;
+        const xTag = document.getElementById("x-posted-tag");
+        if (xTag) xTag.textContent = `Đã Đăng: ${social.x} Videos`;
+    }
+
+    // Update progress bars
+    const totalNz = total || 1;
+    const updateBar = (barId, textId, count, label) => {
+        const bar = document.getElementById(barId);
+        const txt = document.getElementById(textId);
+        const pct = Math.round((count / totalNz) * 100);
+        if (bar) bar.style.width = pct + "%";
+        if (txt) txt.textContent = `${pct}% (${count}/${total})`;
+    };
+    updateBar("progress-bar-script", "progress-text-script", (stats.SCRIPTED || 0), "Script");
+    updateBar("progress-bar-veo", "progress-text-veo", (stats.GENERATING_VEO || 0) + (stats.VEO_DONE || 0), "Veo");
+    updateBar("progress-bar-ffmpeg", "progress-text-ffmpeg", (stats.PROCESSING_FFMPEG || 0) + (stats.READY_TO_POST || 0), "FFmpeg");
+    updateBar("progress-bar-social", "progress-text-social", published, "Social");
 
     // Show/hide quota warning banner
     let quotaBanner = document.getElementById("quota-wait-banner");
@@ -307,13 +334,12 @@ function updateStatisticsUI(stats, running) {
             quotaBanner = document.createElement("div");
             quotaBanner.id = "quota-wait-banner";
             quotaBanner.style.cssText = "background:#fff7e6;border:1px solid #ffd591;border-radius:8px;padding:10px 16px;margin:10px 0;color:#d46b08;font-size:14px;display:flex;align-items:center;gap:8px;";
-            quotaBanner.innerHTML = `<i class="fa-solid fa-hourglass-half fa-spin"></i> <strong>${quotaWaiting} job</strong> đang chờ quota Veo API (429) — sẽ tự retry khi quota reset. <a href="https://ai.dev/rate-limit" target="_blank" style="color:#d46b08;text-decoration:underline;">Kiểm tra quota →</a>`;
-            const statsRow = document.querySelector(".stats-row");
-            if (statsRow) statsRow.parentNode.insertBefore(quotaBanner, statsRow.nextSibling);
-        } else {
-            quotaBanner.innerHTML = `<i class="fa-solid fa-hourglass-half fa-spin"></i> <strong>${quotaWaiting} job</strong> đang chờ quota Veo API (429) — sẽ tự retry khi quota reset. <a href="https://ai.dev/rate-limit" target="_blank" style="color:#d46b08;text-decoration:underline;">Kiểm tra quota →</a>`;
-            quotaBanner.style.display = "flex";
+            // Append to stats-grid (the correct class in HTML)
+            const statsGrid = document.querySelector(".stats-grid");
+            if (statsGrid) statsGrid.parentNode.insertBefore(quotaBanner, statsGrid.nextSibling);
         }
+        quotaBanner.innerHTML = `<i class="fa-solid fa-hourglass-half fa-spin"></i> <strong>${quotaWaiting} job</strong> đang chờ quota Veo API (429) — sẽ tự retry khi quota reset. <a href="https://ai.dev/rate-limit" target="_blank" style="color:#d46b08;text-decoration:underline;">Kiểm tra quota →</a>`;
+        quotaBanner.style.display = "flex";
     } else if (quotaBanner) {
         quotaBanner.style.display = "none";
     }
@@ -324,10 +350,12 @@ function updateStatisticsUI(stats, running) {
         if (isEngineRunning) {
             btnEngine.className = "ant-btn ant-btn-primary ant-btn-lg";
             btnEngine.style.backgroundColor = "#ff4d4f";
+            btnEngine.style.borderColor = "#ff4d4f";
             btnEngine.innerHTML = '<i class="fa-solid fa-stop"></i> Dừng Engine Đa Luồng';
         } else {
             btnEngine.className = "ant-btn ant-btn-primary ant-btn-lg";
             btnEngine.style.backgroundColor = "#1890ff";
+            btnEngine.style.borderColor = "#1890ff";
             btnEngine.innerHTML = '<i class="fa-solid fa-play"></i> Khởi Chạy Engine Đa Luồng';
         }
     }
@@ -425,8 +453,11 @@ function renderJobsTable(jobs) {
                         <i class="fa-solid fa-eye"></i> Xem
                     </button>
                     ${(job.status === 'READY_TO_POST' || job.status === 'PUBLISHED' || job.status === 'VEO_DONE') ? `
-                    <button class="ant-btn" style="background:#1877f2;color:#fff;border-color:#1877f2;" onclick="testPostJob(${job.id},'facebook')" title="Đăng ngay lên Facebook Reels">
+                    <button class="ant-btn" style="background:#1877f2;color:#fff;border-color:#1877f2;" onclick="postVideoToFB(${job.id})" title="Đăng lên Facebook Reels">
                         <i class="fa-brands fa-facebook"></i> Đăng FB
+                    </button>
+                    <button class="ant-btn" style="background:#fe2c55;color:#fff;border-color:#fe2c55;" onclick="postVideoToTikTok(${job.id})" title="Đăng lên TikTok Channels">
+                        <i class="fa-brands fa-tiktok"></i> Đăng TikTok
                     </button>` : ''}
                     <button class="ant-btn ant-btn-danger btn-delete-job" onclick="deleteJob(${job.id})" title="Xóa Job #${job.id}">
                         <i class="fa-solid fa-trash"></i> Xóa
@@ -511,20 +542,22 @@ async function testPostJob(jobId, platform = 'facebook') {
 let selectedConcatJobIds = new Set();
 
 function updateConcatToolbarUI() {
-    const badge = document.getElementById("selected-count-badge");
+    // Update ALL elements with selected-count-badge id (there are 2: in dashboard toolbar & library toolbar)
+    const badges = document.querySelectorAll("#selected-count-badge");
     const toolbar = document.getElementById("bulk-actions-toolbar");
     const btnConcat = document.getElementById("btn-concat-selected");
     const btnDelete = document.getElementById("btn-bulk-delete");
+    const btnDeleteSelected = document.getElementById("btn-delete-selected");
     const count = selectedConcatJobIds.size;
 
-    if (badge) {
+    badges.forEach(badge => {
         if (count > 0) {
             badge.style.display = "inline-block";
             badge.textContent = `Đã chọn: ${count} video`;
         } else {
             badge.style.display = "none";
         }
-    }
+    });
 
     if (toolbar) {
         toolbar.style.display = count > 0 ? "flex" : "none";
@@ -533,6 +566,11 @@ function updateConcatToolbarUI() {
     if (btnDelete) {
         btnDelete.disabled = (count === 0);
         btnDelete.innerHTML = `<i class="fa-solid fa-trash"></i> Xóa (${count}) Video Đã Chọn`;
+    }
+
+    // Also enable/disable the library delete button
+    if (btnDeleteSelected) {
+        btnDeleteSelected.disabled = (count === 0);
     }
 
     if (btnConcat) {
@@ -612,6 +650,7 @@ async function bulkPostFBJobs() {
         testPostJob(id, 'facebook');
     }
 }
+
 
 // Render Video Library 9:16 Grid
 function renderLibraryGrid(jobs) {
@@ -1011,13 +1050,42 @@ function initEngineControl() {
 function initModal() {
     const modal = document.getElementById("video-modal");
     const closeBtn = document.getElementById("modal-close-btn");
+
+    const closeVideoModal = () => {
+        if (!modal) return;
+        modal.style.display = "none";
+        const videoEl = modal.querySelector("video");
+        if (videoEl) { videoEl.pause(); videoEl.src = ""; }
+    };
+
     if (closeBtn && modal) {
-        closeBtn.onclick = () => {
-            modal.style.display = "none";
-            const videoEl = modal.querySelector("video");
-            if (videoEl) videoEl.pause();
-        };
+        closeBtn.onclick = closeVideoModal;
     }
+
+    // Click outside modal container to close
+    if (modal) {
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) closeVideoModal();
+        });
+    }
+
+    // ESC key closes all modals
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            closeVideoModal();
+            const confirmModal = document.getElementById("confirm-modal");
+            if (confirmModal && confirmModal.style.display !== "none") {
+                const cancelBtn = document.getElementById("confirm-modal-cancel");
+                if (cancelBtn) cancelBtn.click();
+            }
+            const promptModal = document.getElementById("prompt-modal");
+            if (promptModal && promptModal.style.display !== "none") {
+                const cancelBtn = document.getElementById("prompt-modal-cancel");
+                if (cancelBtn) cancelBtn.click();
+            }
+            closeFbProfileModal();
+        }
+    });
 }
 
 function openPreviewModal(jobId) {
@@ -1027,12 +1095,16 @@ function openPreviewModal(jobId) {
     document.getElementById("modal-video-title").textContent = job.title || `Job #${job.id}`;
     document.getElementById("modal-video-desc").textContent = job.voiceover_text || job.veo_prompt || "Không có mô tả";
 
-    let tagsHtml = "";
-    if (job.tags && Array.isArray(job.tags)) {
-        tagsHtml = job.tags.map(t => `<span class="ant-tag ant-tag-processing">${t}</span>`).join(" ");
-    } else {
-        tagsHtml = '<span class="ant-tag ant-tag-processing">#AI2026</span> <span class="ant-tag ant-tag-processing">#Shorts</span>';
+    // Tags may be a JSON string from SQLite — parse it
+    let tagsArr = [];
+    if (Array.isArray(job.tags)) {
+        tagsArr = job.tags;
+    } else if (typeof job.tags === 'string' && job.tags.trim()) {
+        try { tagsArr = JSON.parse(job.tags); } catch(e) { tagsArr = []; }
     }
+    let tagsHtml = tagsArr.length > 0
+        ? tagsArr.map(t => `<span class="ant-tag ant-tag-processing">${t}</span>`).join(" ")
+        : '<span class="ant-tag ant-tag-processing">#AI2026</span> <span class="ant-tag ant-tag-processing">#Shorts</span>';
     document.getElementById("modal-video-tags").innerHTML = tagsHtml;
 
     const container = document.getElementById("modal-video-container");
@@ -1045,28 +1117,37 @@ function openPreviewModal(jobId) {
 
     if (container) {
         if (hasVideo) {
-            // Use the smart stream API — works for clone (downloads/) AND generated (final/) videos
-            const streamUrl = `${API_BASE}/api/video-stream/${job.id}`;
+            // Use absolute URL to avoid relative path issues when page is served from /ui/
+            const streamUrl = `${window.location.origin}/api/video-stream/${job.id}`;
             container.innerHTML = `
                 <video
                     id="modal-player"
-                    src="${streamUrl}"
                     controls
                     autoplay
-                    loop
                     playsinline
-                    style="width:100%;height:100%;object-fit:cover;border-radius:12px;background:#000;"
-                    onerror="document.getElementById('modal-player-err').style.display='block'"
+                    preload="metadata"
+                    style="width:100%;height:100%;object-fit:contain;border-radius:12px;background:#000;"
+                    src="${streamUrl}"
                 >
                     Trình duyệt không hỗ trợ phát video.
                 </video>
-                <div id="modal-player-err" style="display:none;color:#ff6b6b;text-align:center;padding:20px;">
-                    ⚠️ Không tải được video. Thử <a href="${streamUrl}" target="_blank" style="color:#60a5fa;">mở trực tiếp</a>
+                <div id="modal-player-err" style="display:none;color:#ff6b6b;text-align:center;padding:20px;font-size:13px;">
+                    ⚠️ Không tải được video. <a href="${streamUrl}" target="_blank" style="color:#60a5fa;">Mở trực tiếp →</a>
                 </div>
             `;
+            // Force load & play
+            const vid = document.getElementById('modal-player');
+            if (vid) {
+                vid.onerror = () => {
+                    const errEl = document.getElementById('modal-player-err');
+                    if (errEl) errEl.style.display = 'block';
+                };
+                vid.load();
+                vid.play().catch(() => {});
+            }
             if (downloadBtn) {
                 downloadBtn.style.display = "inline-flex";
-                downloadBtn.href = streamUrl;
+                downloadBtn.href = `${window.location.origin}/api/video-stream/${job.id}`;
             }
         } else {
             container.innerHTML = `
@@ -1522,17 +1603,316 @@ async function executePostToProfiles() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// TIKTOK MULTI-PROFILE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+let _tiktokProfiles = [];
+
+async function loadTikTokProfiles() {
+    const container = document.getElementById("tiktok-profiles-list");
+    if (!container) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/tiktok-profiles`);
+        const data = await res.json();
+        _tiktokProfiles = data.profiles || [];
+        renderTikTokProfiles(_tiktokProfiles);
+    } catch (err) {
+        if (container) container.innerHTML = `<div style="color:var(--color-error);padding:12px;">Lỗi tải profiles: ${err.message}</div>`;
+    }
+}
+
+function renderTikTokProfiles(profiles) {
+    const container = document.getElementById("tiktok-profiles-list");
+    if (!container) return;
+
+    if (profiles.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center;padding:24px;color:var(--text-secondary);">
+                <i class="fa-solid fa-user-plus" style="font-size:28px;margin-bottom:8px;display:block;opacity:0.4;"></i>
+                Chưa có profile nào. Nhập tên và click "Thêm Profile" để bắt đầu.
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = profiles.map(p => {
+        const isDefault = p.id === 'default';
+        const loggedIn = p.logged_in;
+        const statusBadge = loggedIn
+            ? `<span class="ant-tag" style="background:rgba(82,196,26,0.12);color:#52c41a;border-color:rgba(82,196,26,0.3);">
+                <i class="fa-solid fa-circle-check"></i> Đã đăng nhập</span>`
+            : `<span class="ant-tag" style="background:rgba(250,173,20,0.12);color:#faad14;border-color:rgba(250,173,20,0.3);">
+                <i class="fa-solid fa-triangle-exclamation"></i> Chưa đăng nhập</span>`;
+
+        return `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-secondary);">
+            <i class="fa-brands fa-tiktok" style="font-size:20px;color:#fe2c55;flex-shrink:0;"></i>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;font-size:14px;">${p.name}${isDefault ? ' <span style="font-size:11px;color:var(--text-secondary);">(mặc định)</span>' : ''}</div>
+                <div style="margin-top:4px;">${statusBadge}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+                ${loggedIn
+                    ? `<button class="ant-btn" style="font-size:12px;padding:4px 10px;height:auto;color:#faad14;border-color:rgba(250,173,20,0.4);"
+                        onclick="logoutTikTokProfile('${p.id}')">
+                        <i class="fa-solid fa-right-from-bracket"></i> Logout
+                       </button>`
+                    : `<button class="ant-btn ant-btn-primary" style="font-size:12px;padding:4px 10px;height:auto;background:#fe2c55;border-color:#fe2c55;"
+                        onclick="loginTikTokProfile('${p.id}')">
+                        <i class="fa-solid fa-arrow-right-to-bracket"></i> Login
+                       </button>`
+                }
+                ${!isDefault ? `
+                <button class="ant-btn ant-btn-danger" style="font-size:12px;padding:4px 10px;height:auto;"
+                    onclick="deleteTikTokProfile('${p.id}', '${p.name}')">
+                    <i class="fa-solid fa-trash"></i>
+                </button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function createTikTokProfile() {
+    const input = document.getElementById("tiktok-new-profile-name");
+    const name = (input?.value || "").trim();
+    if (!name) { showToast("Nhập tên profile TikTok trước!", "error"); return; }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/tiktok-profiles`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`✅ Đã tạo profile TikTok "${data.profile.name}"`, "success");
+            if (input) input.value = "";
+            loadTikTokProfiles();
+        } else {
+            showToast(data.detail || "Lỗi tạo profile TikTok", "error");
+        }
+    } catch (err) {
+        showToast(`Lỗi: ${err.message}`, "error");
+    }
+}
+
+async function deleteTikTokProfile(profileId, name) {
+    const ok = await showConfirmModal(`Xóa profile TikTok "${name}"? Toàn bộ session đăng nhập sẽ bị xóa!`, "Xác Nhận Xóa Profile TikTok");
+    if (!ok) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/tiktok-profiles/${profileId}`, { method: "DELETE" });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`Đã xóa profile TikTok "${name}"`, "success");
+            loadTikTokProfiles();
+        } else {
+            showToast(data.detail || "Lỗi xóa profile TikTok", "error");
+        }
+    } catch (err) {
+        showToast(`Lỗi: ${err.message}`, "error");
+    }
+}
+
+async function loginTikTokProfile(profileId) {
+    showToast("Đang mở browser đăng nhập TikTok...", "info");
+    try {
+        const res = await fetch(`${API_BASE}/api/tiktok-profiles/${profileId}/login`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+            showToast("Browser đăng nhập TikTok đã mở! Sau khi đăng nhập xong, click Refresh.", "info");
+            setTimeout(() => loadTikTokProfiles(), 5000);
+        } else {
+            showToast(data.detail || "Lỗi mở browser TikTok", "error");
+        }
+    } catch (err) {
+        showToast(`Lỗi: ${err.message}`, "error");
+    }
+}
+
+async function logoutTikTokProfile(profileId) {
+    const profiles = _tiktokProfiles;
+    const p = profiles.find(x => x.id === profileId);
+    const name = p ? p.name : profileId;
+    const ok = await showConfirmModal(`Đăng xuất profile TikTok "${name}"? Cần đăng nhập lại sau.`, "Xác Nhận Logout TikTok");
+    if (!ok) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/tiktok-profiles/${profileId}/logout`, { method: "POST" });
+        const data = await res.json();
+        showToast(data.message, res.ok ? "success" : "error");
+        loadTikTokProfiles();
+    } catch (err) {
+        showToast(`Lỗi: ${err.message}`, "error");
+    }
+}
+
+// ── TikTok Profile Selector Modal (Library → Đăng TikTok) ────
+let _tiktokModalJobId = null;
+
+async function postVideoToTikTok(jobId) {
+    openTikTokProfileModal(jobId);
+}
+
+async function openTikTokProfileModal(jobId) {
+    _tiktokModalJobId = jobId;
+
+    const modal = document.getElementById("tiktok-profile-modal");
+    const nameEl = document.getElementById("tiktok-modal-video-name");
+    if (nameEl) {
+        const job = currentJobs.find(j => j.id === jobId);
+        nameEl.textContent = `Video: ${job ? (job.title || `#${jobId}`) : `Job #${jobId}`}`;
+    }
+
+    if (modal) modal.style.display = "flex";
+    await renderTikTokModalProfiles();
+}
+
+function closeTikTokProfileModal() {
+    const modal = document.getElementById("tiktok-profile-modal");
+    if (modal) modal.style.display = "none";
+    _tiktokModalJobId = null;
+}
+
+async function renderTikTokModalProfiles() {
+    const container = document.getElementById("tiktok-modal-profiles");
+    if (!container) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/tiktok-profiles`);
+        const data = await res.json();
+        const profiles = data.profiles || [];
+        _tiktokProfiles = profiles;
+
+        if (profiles.length === 0) {
+            container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-secondary);">
+                Chưa có profile TikTok nào. Vào <b>Cấu Hình Auto Post</b> để tạo profile.</div>`;
+            return;
+        }
+
+        container.innerHTML = profiles.map(p => {
+            const loggedIn = p.logged_in;
+            return `
+            <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--border-color);cursor:${loggedIn ? 'pointer' : 'default'};background:var(--bg-secondary);${!loggedIn ? 'opacity:0.55;' : ''}">
+                <input type="checkbox" class="tiktok-profile-checkbox" value="${p.id}" ${!loggedIn ? 'disabled' : ''} checked style="width:16px;height:16px;">
+                <i class="fa-brands fa-tiktok" style="font-size:18px;color:#fe2c55;"></i>
+                <div style="flex:1;">
+                    <div style="font-weight:600;">${p.name}</div>
+                    <div style="font-size:11px;color:${loggedIn ? '#52c41a' : '#faad14'};">
+                        ${loggedIn ? '✅ Đã đăng nhập — sẵn sàng đăng' : '⚠️ Chưa đăng nhập'}
+                    </div>
+                </div>
+            </label>`;
+        }).join('');
+
+        updateTikTokModalPostBtn();
+        document.querySelectorAll(".tiktok-profile-checkbox").forEach(cb => {
+            cb.addEventListener("change", updateTikTokModalPostBtn);
+        });
+
+    } catch (err) {
+        container.innerHTML = `<div style="color:var(--color-error);padding:12px;">Lỗi tải profiles: ${err.message}</div>`;
+    }
+}
+
+function updateTikTokModalPostBtn() {
+    const checked = document.querySelectorAll(".tiktok-profile-checkbox:checked:not(:disabled)");
+    const label = document.getElementById("tiktok-modal-post-label");
+    const btn = document.getElementById("tiktok-modal-post-btn");
+    const count = checked.length;
+    if (label) label.textContent = count > 0
+        ? `Đăng Lên ${count} Profile TikTok`
+        : "Chọn ít nhất 1 profile";
+    if (btn) btn.disabled = count === 0;
+}
+
+async function executePostToTikTokProfiles() {
+    if (!_tiktokModalJobId) return;
+    const checked = document.querySelectorAll(".tiktok-profile-checkbox:checked:not(:disabled)");
+    const profileIds = Array.from(checked).map(cb => cb.value);
+    if (profileIds.length === 0) { showToast("Chọn ít nhất 1 profile TikTok!", "error"); return; }
+
+    const maxWorkers = parseInt(document.getElementById("tiktok-modal-max-workers")?.value || "3");
+    const postBtn = document.getElementById("tiktok-modal-post-btn");
+    if (postBtn) { postBtn.disabled = true; postBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang gửi...'; }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/social/post-to-tiktok-profiles`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ job_id: _tiktokModalJobId, profile_ids: profileIds, max_workers: maxWorkers })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`✅ ${data.message}`, "success");
+            closeTikTokProfileModal();
+            setTimeout(() => fetchJobsAndStats(), 30000);
+        } else {
+            showToast(data.detail || "Lỗi đăng bài TikTok", "error");
+            if (postBtn) { postBtn.disabled = false; postBtn.innerHTML = '<i class="fa-brands fa-tiktok"></i> <span id="tiktok-modal-post-label">Đăng Lên Profiles</span>'; }
+        }
+    } catch (err) {
+        showToast(`Lỗi: ${err.message}`, "error");
+        if (postBtn) { postBtn.disabled = false; postBtn.innerHTML = '<i class="fa-brands fa-tiktok"></i> <span id="tiktok-modal-post-label">Đăng Lên Profiles</span>'; }
+    }
+}
+
+// ── Switch Social Horizontal Sub-Tabs ────────────────────────
+function switchSocialSubtab(platform) {
+    document.querySelectorAll(".social-subtab-btn").forEach(btn => {
+        const p = btn.getAttribute("data-subtab");
+        if (p === platform) {
+            btn.classList.add("active");
+            btn.style.background = p === 'fb' ? '#1877f2' : p === 'tiktok' ? '#fe2c55' : '#14171a';
+            btn.style.color = '#fff';
+            btn.style.borderColor = 'transparent';
+        } else {
+            btn.classList.remove("active");
+            btn.style.background = 'var(--bg-secondary)';
+            btn.style.color = 'var(--text-color)';
+            btn.style.borderColor = 'var(--border-color)';
+        }
+    });
+
+    document.querySelectorAll(".social-subtab-content").forEach(content => {
+        const targetId = `social-subtab-${platform}`;
+        content.style.display = content.id === targetId ? 'block' : 'none';
+    });
+
+    if (platform === 'fb') loadFbProfiles();
+    if (platform === 'tiktok') loadTikTokProfiles();
+}
+
+// Expose on window scope for inline HTML onclick attributes
+window.switchSocialSubtab = switchSocialSubtab;
+window.createFbProfile = createFbProfile;
+window.createTikTokProfile = createTikTokProfile;
+window.loadFbProfiles = loadFbProfiles;
+window.loadTikTokProfiles = loadTikTokProfiles;
+window.loginFbProfile = loginFbProfile;
+window.logoutFbProfile = logoutFbProfile;
+window.deleteFbProfile = deleteFbProfile;
+window.loginTikTokProfile = loginTikTokProfile;
+window.logoutTikTokProfile = logoutTikTokProfile;
+window.deleteTikTokProfile = deleteTikTokProfile;
+window.postVideoToFB = postVideoToFB;
+window.postVideoToTikTok = postVideoToTikTok;
+window.closeFbProfileModal = closeFbProfileModal;
+window.closeTikTokProfileModal = closeTikTokProfileModal;
+window.executePostToProfiles = executePostToProfiles;
+window.executePostToTikTokProfiles = executePostToTikTokProfiles;
+
 // ── Auto-load profiles khi vào Social tab ───────────────────
 document.addEventListener("DOMContentLoaded", () => {
-    // Load FB profiles khi click vào tab social
     const socialNav = document.querySelector('[data-tab="social"]');
     if (socialNav) {
         socialNav.addEventListener("click", () => {
-            setTimeout(loadFbProfiles, 100);
+            setTimeout(() => {
+                loadFbProfiles();
+                loadTikTokProfiles();
+            }, 100);
         });
     }
-    // Cũng load ngay nếu đang ở tab social
     if (document.querySelector('#tab-social.active')) {
         loadFbProfiles();
+        loadTikTokProfiles();
     }
 });

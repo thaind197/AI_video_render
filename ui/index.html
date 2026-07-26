@@ -476,14 +476,33 @@
 
             <!-- Tab Content: Social Configurations -->
             <div id="tab-social" class="tab-pane">
-                <div class="social-config-grid">
-                    <div class="ant-card social-card" style="grid-column: 1 / -1;">
-                        <div class="social-card-header fb">
-                            <i class="fa-brands fa-facebook"></i>
-                            <h3>Facebook Profiles — Đăng Đa Tài Khoản</h3>
+
+                <!-- 3 Horizontal Sub-Tabs Header -->
+                <div style="display:flex;gap:12px;margin-bottom:20px;border-bottom:1px solid var(--border-color);padding-bottom:12px;flex-wrap:wrap;">
+                    <button class="social-subtab-btn active" data-subtab="fb" onclick="switchSocialSubtab('fb')" style="display:flex;align-items:center;gap:8px;padding:10px 22px;border-radius:8px;border:none;font-weight:600;cursor:pointer;font-size:14px;background:#1877f2;color:#fff;transition:all 0.2s;">
+                        <i class="fa-brands fa-facebook" style="font-size:18px;"></i> Facebook Profiles
+                    </button>
+                    <button class="social-subtab-btn" data-subtab="tiktok" onclick="switchSocialSubtab('tiktok')" style="display:flex;align-items:center;gap:8px;padding:10px 22px;border-radius:8px;border:1px solid var(--border-color);font-weight:600;cursor:pointer;font-size:14px;background:var(--bg-secondary);color:var(--text-color);transition:all 0.2s;">
+                        <i class="fa-brands fa-tiktok" style="font-size:18px;color:#fe2c55;"></i> TikTok Profiles
+                    </button>
+                    <button class="social-subtab-btn" data-subtab="x" onclick="switchSocialSubtab('x')" style="display:flex;align-items:center;gap:8px;padding:10px 22px;border-radius:8px;border:1px solid var(--border-color);font-weight:600;cursor:pointer;font-size:14px;background:var(--bg-secondary);color:var(--text-color);transition:all 0.2s;">
+                        <i class="fa-brands fa-x-twitter" style="font-size:18px;"></i> X (Twitter) Session
+                    </button>
+                </div>
+
+                <!-- Sub-tab 1: Facebook Profiles -->
+                <div id="social-subtab-fb" class="social-subtab-content">
+                    <div class="ant-card social-card" style="border-top:4px solid #1877f2;">
+                        <div class="social-card-header fb" style="display:flex;align-items:center;justify-content:space-between;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <i class="fa-brands fa-facebook" style="color:#1877f2;font-size:22px;"></i>
+                                <h3>Facebook Profiles — Đăng Đa Tài Khoản</h3>
+                            </div>
+                            <button class="ant-btn ant-btn-sm" style="font-size:12px;" onclick="loadFbProfiles()">
+                                <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                            </button>
                         </div>
                         <div class="social-card-body">
-
                             <!-- Add Profile Row -->
                             <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
                                 <input id="fb-new-profile-name" type="text" class="ant-input"
@@ -493,13 +512,10 @@
                                 <button class="ant-btn ant-btn-primary" onclick="createFbProfile()" style="white-space:nowrap;">
                                     <i class="fa-solid fa-plus"></i> Thêm Profile
                                 </button>
-                                <button class="ant-btn" onclick="loadFbProfiles()" title="Làm mới danh sách">
-                                    <i class="fa-solid fa-rotate-right"></i>
-                                </button>
                             </div>
 
                             <!-- Profile List -->
-                            <div id="fb-profiles-list">
+                            <div id="fb-profiles-list" style="max-height:360px;overflow-y:auto;padding-right:6px;display:flex;flex-direction:column;gap:8px;">
                                 <div style="text-align:center;padding:24px;color:var(--text-secondary);">
                                     <i class="fa-solid fa-spinner fa-spin"></i> Đang tải profiles...
                                 </div>
@@ -523,31 +539,63 @@
                                     </div>
                                 </div>
                             </div>
-
                         </div>
                     </div>
+                </div>
 
-                    <div class="ant-card social-card">
-                        <div class="social-card-header tiktok">
-                            <i class="fa-brands fa-tiktok"></i>
-                            <h3>TikTok Creator Studio Session</h3>
+                <!-- Sub-tab 2: TikTok Profiles -->
+                <div id="social-subtab-tiktok" class="social-subtab-content" style="display:none;">
+                    <div class="ant-card social-card" style="border-top:4px solid #fe2c55;">
+                        <div class="social-card-header tiktok" style="display:flex;align-items:center;justify-content:space-between;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <i class="fa-brands fa-tiktok" style="color:#fe2c55;font-size:22px;"></i>
+                                <h3>TikTok Profiles — Đăng Đa Tài Khoản</h3>
+                            </div>
+                            <button class="ant-btn ant-btn-sm" style="font-size:12px;" onclick="loadTikTokProfiles()">
+                                <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                            </button>
                         </div>
                         <div class="social-card-body">
-                            <p>Trạng thái Session: <span id="tiktok-status-tag" class="ant-tag"><i
-                                        class="fa-solid fa-spinner fa-spin"></i> Đang kiểm tra...</span></p>
+                            <!-- Add Profile Row -->
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+                                <input type="text" id="tiktok-new-profile-name" class="ant-input" placeholder="Tên profile (vd: TikTok Kênh 1, Nick Phụ...)" style="flex:1;max-width:340px;" onkeydown="if(event.key==='Enter') createTikTokProfile()">
+                                <button class="ant-btn ant-btn-primary" style="background:#fe2c55;border-color:#fe2c55;white-space:nowrap;" onclick="createTikTokProfile()">
+                                    <i class="fa-solid fa-plus"></i> Thêm Profile
+                                </button>
+                            </div>
 
-                            <div style="display: flex; gap: 10px; margin-top: 15px;">
-                                <button class="ant-btn ant-btn-default btn-login-social" data-platform="TikTok">
-                                    <i class="fa-solid fa-arrow-right-to-bracket"></i> Đăng Nhập Lại TikTok
-                                </button>
-                                <button class="ant-btn ant-btn-danger btn-logout-social" data-platform="TikTok">
-                                    <i class="fa-solid fa-right-from-bracket"></i> Đăng Xuất
-                                </button>
+                            <!-- Profile List -->
+                            <div id="tiktok-profiles-list" style="max-height:360px;overflow-y:auto;padding-right:6px;display:flex;flex-direction:column;gap:8px;">
+                                <div style="text-align:center;padding:24px;color:var(--text-secondary);">
+                                    <i class="fa-solid fa-spinner fa-spin"></i> Đang tải profiles...
+                                </div>
+                            </div>
+
+                            <!-- How it works -->
+                            <div style="background:rgba(254,44,85,0.05);border:1px solid rgba(254,44,85,0.15);border-radius:10px;padding:14px;margin-top:16px;">
+                                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;">Cách sử dụng:</div>
+                                <div style="display:flex;gap:20px;flex-wrap:wrap;">
+                                    <div style="display:flex;align-items:flex-start;gap:8px;">
+                                        <span style="background:#fe2c55;color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">1</span>
+                                        <div style="font-size:12px;">Thêm profile → click <b>Login</b> → đăng nhập TikTok → đóng browser</div>
+                                    </div>
+                                    <div style="display:flex;align-items:flex-start;gap:8px;">
+                                        <span style="background:#fe2c55;color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">2</span>
+                                        <div style="font-size:12px;">Vào <b>Thư Viện Video</b> → click <b>Đăng TikTok</b> → chọn profiles → hệ thống đăng song song</div>
+                                    </div>
+                                    <div style="display:flex;align-items:flex-start;gap:8px;">
+                                        <span style="background:#52c41a;color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;"><i class="fa-solid fa-check" style="font-size:9px;"></i></span>
+                                        <div style="font-size:12px;">Mỗi profile chạy <b>1 browser ẩn riêng</b> — đồng thời, không xung đột</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="ant-card social-card">
+                <!-- Sub-tab 3: X (Twitter) -->
+                <div id="social-subtab-x" class="social-subtab-content" style="display:none;">
+                    <div class="ant-card social-card" style="border-top:4px solid #14171a;">
                         <div class="social-card-header x">
                             <i class="fa-brands fa-x-twitter"></i>
                             <h3>X (Twitter) Browser Session</h3>
@@ -840,6 +888,52 @@
                 <button class="ant-btn ant-btn-primary" id="fb-modal-post-btn" style="flex:2;background:#1877f2;border-color:#1877f2;" onclick="executePostToProfiles()">
                     <i class="fa-brands fa-facebook"></i>
                     <span id="fb-modal-post-label">Đăng Lên Profiles Đã Chọn</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TikTok Profile Selector Modal -->
+    <div id="tiktok-profile-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-container" style="max-width:520px;padding:0;overflow:hidden;">
+            <!-- Header -->
+            <div style="background:linear-gradient(135deg,#fe2c55,#000000);padding:20px 24px;color:#fff;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <i class="fa-brands fa-tiktok" style="font-size:22px;"></i>
+                    <div>
+                        <div style="font-size:16px;font-weight:700;">Chọn Profile để Đăng TikTok</div>
+                        <div id="tiktok-modal-video-name" style="font-size:12px;opacity:0.85;margin-top:2px;"></div>
+                    </div>
+                    <button onclick="closeTikTokProfileModal()" style="margin-left:auto;background:none;border:none;color:#fff;font-size:18px;cursor:pointer;opacity:0.8;">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+            <!-- Profile List -->
+            <div style="padding:16px 20px;max-height:320px;overflow-y:auto;">
+                <div id="tiktok-modal-profiles" style="display:flex;flex-direction:column;gap:8px;">
+                    <div style="text-align:center;padding:20px;color:var(--text-secondary);">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Đang tải...
+                    </div>
+                </div>
+            </div>
+            <!-- Settings Row -->
+            <div style="padding:10px 20px;border-top:1px solid var(--border-color);background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;gap:10px;font-size:13px;">
+                    <label style="color:var(--text-secondary);white-space:nowrap;">
+                        <i class="fa-solid fa-layer-group"></i> Browser song song:
+                    </label>
+                    <input id="tiktok-modal-max-workers" type="number" min="1" max="5" value="3"
+                        class="ant-input" style="width:60px;text-align:center;">
+                    <span style="color:var(--text-secondary);font-size:12px;">(tối đa 5)</span>
+                </div>
+            </div>
+            <!-- Footer -->
+            <div style="padding:14px 20px;display:flex;gap:10px;border-top:1px solid var(--border-color);">
+                <button class="ant-btn" style="flex:1;" onclick="closeTikTokProfileModal()">Hủy</button>
+                <button class="ant-btn ant-btn-primary" id="tiktok-modal-post-btn" style="flex:2;background:#fe2c55;border-color:#fe2c55;" onclick="executePostToTikTokProfiles()">
+                    <i class="fa-brands fa-tiktok"></i>
+                    <span id="tiktok-modal-post-label">Đăng Lên Profiles Đã Chọn</span>
                 </button>
             </div>
         </div>

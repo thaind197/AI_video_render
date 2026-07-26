@@ -1,8 +1,10 @@
 import os
+import glob
 import shutil
 import logging
 import platform
 import subprocess
+import sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright, BrowserContext, Page
 
@@ -18,22 +20,13 @@ _CHROMIUM_ARGS = [
 
 # Args để ẩn cửa sổ (đẩy ra ngoài màn hình — vẫn headless=False nên FB không detect)
 _HIDDEN_ARGS = [
-    '--window-position=-32000,-32000',   # Đẩy cửa sổ ra ngoài màn hình
+    '--window-position=-32000,-32000',
     '--window-size=1920,1080',
     '--disable-blink-features=AutomationControlled',
     '--no-sandbox',
     '--disable-infobars',
     '--disable-dev-shm-usage',
 ]
-
-def _hide_chromium_window_macos():
-    """Dùng osascript để minimize cửa sổ Chromium trên macOS."""
-    try:
-        script = 'tell application "Chromium" to set miniaturized of every window to true'
-        subprocess.Popen(['osascript', '-e', script],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
 
 
 class BasePublisher:
@@ -45,15 +38,13 @@ class BasePublisher:
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
     def get_browser_context(self, p, headless: bool = False, hidden: bool = True) -> BrowserContext:
-        """Get persistent browser context.
+        """Get persistent browser context for automated posting (hidden background browser).
 
         Args:
-            headless: True = headless mode (NOT recommended for Facebook — hides file inputs).
-            hidden:   True = visible browser BUT đẩy cửa sổ ra ngoài màn hình (khuyến nghị).
-                      False = cửa sổ toàn màn hình (dùng để debug hoặc đăng nhập).
+            headless: True = headless mode (NOT recommended for Facebook).
+            hidden:   True = off-screen (background posting). False = visible.
 
-        NOTE: Facebook REQUIRES headless=False to render file upload inputs.
-        Use hidden=True for background posting — browser chạy ẩn mà FB không detect.
+        NOTE: For LOGIN, use interactive_login() which launches a separate process.
         """
         if headless:
             context = p.chromium.launch_persistent_context(
@@ -70,20 +61,14 @@ class BasePublisher:
                 no_viewport=True,
                 args=_HIDDEN_ARGS,
             )
-            # macOS: minimize via osascript ngay sau khi mở
-            if platform.system() == "Darwin":
-                import threading
-                threading.Timer(2.0, _hide_chromium_window_macos).start()
-            logger.info(f"[{self.platform_name}] Browser ẩn (off-screen) — chạy background.")
+            logger.info(f"[{self.platform_name}] Browser an (off-screen) - chay background.")
         else:
-            # VISIBLE / FULLSCREEN mode: dùng cho login hoặc debug
             context = p.chromium.launch_persistent_context(
                 user_data_dir=str(self.session_dir),
                 headless=False,
                 no_viewport=True,
                 args=_CHROMIUM_ARGS + ['--start-maximized'],
             )
-            logger.info(f"[{self.platform_name}] Browser toàn màn hình.")
         return context
 
     def is_logged_in(self) -> bool:
@@ -99,41 +84,79 @@ class BasePublisher:
             if self.session_dir.exists():
                 shutil.rmtree(self.session_dir)
             self.session_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Đã xóa thành công phiên đăng nhập {self.platform_name}!")
+            logger.info(f"Da xoa phien dang nhap {self.platform_name}!")
             return True
         except Exception as e:
-            logger.error(f"Lỗi khi xóa phiên đăng nhập {self.platform_name}: {e}")
+            logger.error(f"Loi xoa phien dang nhap {self.platform_name}: {e}")
             return False
 
     def interactive_login(self, login_url: str):
-        """Open FULLSCREEN visible browser window for user to manually log in once and save session"""
-        logger.info(f"Đang mở trình duyệt TOÀN MÀN HÌNH để bạn đăng nhập {self.platform_name}...")
+        """Mo trinh duyet de user dang nhap thu cong.
+
+        Chay _login_browser.py nhu SUBPROCESS RIENG BIET de dam bao:
+        - Playwright chay trong process moi (khong bi conflict voi thread)
+        - Browser window LUON hien tren man hinh
+        - Moi profile co session_dir rieng -> session doc lap
+        """
+        def _p(msg):
+            try:
+                print(f"[interactive_login] {msg}", flush=True)
+            except Exception:
+                pass
+
+        _p(f"START platform={self.platform_name}")
+        _p(f"session_dir={self.session_dir}")
+        _p(f"login_url={login_url}")
+
+        # Xoa lock files con sot tu session cu
+        for lock_file in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
+            lock_path = self.session_dir / lock_file
+            if lock_path.exists():
+                try:
+                    lock_path.unlink()
+                    _p(f"Removed lock: {lock_file}")
+                except Exception:
+                    pass
+
+        # Tim duong dan python.exe dang chay
+        python_exe = sys.executable
+        _p(f"Python: {python_exe}")
+
+        # Tim _login_browser.py (cung thu muc voi server.py)
+        script_path = Path(__file__).parent.parent / "_login_browser.py"
+        if not script_path.exists():
+            # Fallback: tim trong current working dir
+            script_path = Path("_login_browser.py")
+        if not script_path.exists():
+            _p(f"ERROR: _login_browser.py not found at {script_path}")
+            raise FileNotFoundError(f"_login_browser.py not found")
+
+        _p(f"Script: {script_path}")
+
+        # Chay _login_browser.py nhu subprocess rieng biet
+        # KHONG dung CREATE_NEW_CONSOLE de output van hien trong server console
+        cmd = [python_exe, str(script_path), str(self.session_dir), login_url]
+        _p(f"Launching subprocess: {' '.join(cmd[:2])} ...")
+
         try:
-            with sync_playwright() as p:
-                # Always headless=False + maximized for login
-                context = self.get_browser_context(p, headless=False)
-                page = context.new_page()
-                # Maximize via JS as fallback
-                try:
-                    page.evaluate("window.moveTo(0,0); window.resizeTo(screen.availWidth, screen.availHeight);")
-                except Exception:
-                    pass
-                page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
-                logger.info(
-                    f"✅ Trình duyệt {self.platform_name} đã mở TOÀN MÀN HÌNH. "
-                    "Hãy đăng nhập và ĐÓNG CỬA SỔ TRÌNH DUYỆT khi hoàn tất."
-                )
+            proc = subprocess.Popen(
+                cmd,
+                stdout=sys.stdout,   # Forward output ve server console
+                stderr=sys.stderr,
+            )
+            _p(f"Subprocess PID={proc.pid} - cho user dang nhap va dong browser...")
 
-                # Wait until user closes the page window (up to 10 minutes)
-                try:
-                    page.wait_for_event("close", timeout=600000)
-                except Exception:
-                    pass
+            # BLOCKING: cho den khi _login_browser.py thoat (user dong browser)
+            proc.wait(timeout=660)  # 11 phut (script co timeout 10 phut)
 
-                context.close()
-                logger.info(f"✅ Đã lưu phiên đăng nhập {self.platform_name}!")
+            _p(f"Subprocess exited. PID={proc.pid} exitCode={proc.returncode}")
+        except subprocess.TimeoutExpired:
+            _p("Timeout - killing subprocess")
+            proc.kill()
+            proc.wait()
         except Exception as e:
-            logger.exception(f"Lỗi mở trình duyệt đăng nhập {self.platform_name}: {e}")
+            _p(f"ERROR: {e}")
+            raise
 
     def post_video(self, video_path: Path, caption: str, tags: list = None) -> bool:
         raise NotImplementedError("Subclasses must implement post_video")

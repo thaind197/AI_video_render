@@ -1,20 +1,32 @@
 import time
 import logging
 from pathlib import Path
-from playwright.sync_api import sync_playwright
 from config.settings import TIKTOK_SESSION_DIR
 from publishers.base_publisher import BasePublisher
 
 logger = logging.getLogger(__name__)
 
-class TikTokPublisher(BasePublisher):
-    """TikTok Creator Studio Auto Publisher using Browser Session"""
 
-    def __init__(self):
-        super().__init__("TikTok", TIKTOK_SESSION_DIR)
+class TikTokPublisher(BasePublisher):
+    """TikTok Creator Studio Auto Publisher using Browser Session.
+    Supports multi-account: pass profile_id to use a specific TikTok profile session.
+    """
+
+    def __init__(self, profile_id: str = None):
+        if profile_id:
+            from publishers.tiktok_profile_manager import TikTokProfileManager
+            mgr = TikTokProfileManager()
+            session_dir = mgr.get_session_dir(profile_id)
+            profile = mgr.get_profile(profile_id)
+            name = profile["name"] if profile else profile_id
+            super().__init__(f"TikTok [{name}]", session_dir)
+            self._profile_id = profile_id
+        else:
+            super().__init__("TikTok", TIKTOK_SESSION_DIR)
+            self._profile_id = "default"
 
     def login_manual(self):
-        self.interactive_login("https://www.tiktok.com/login")
+        self.interactive_login("https://www.tiktok.com/upload")
 
     def post_video(self, video_path: Path, caption: str, tags: list = None) -> bool:
         if not video_path.exists():
@@ -23,21 +35,23 @@ class TikTokPublisher(BasePublisher):
 
         full_caption = caption
         if tags:
-            full_caption += " " + " ".join(tags)
+            tag_str = " ".join(t if t.startswith("#") else f"#{t}" for t in tags[:20])
+            full_caption += f"\n\n{tag_str}"
 
-        logger.info(f"Đang tự động đăng video lên TikTok: {video_path.name}")
+        logger.info(f"[{self.platform_name}] Đang tự động đăng video lên TikTok (hidden mode): {video_path.name}")
 
         try:
+            from playwright.sync_api import sync_playwright
             with sync_playwright() as p:
-                context = self.get_browser_context(p, headless=True)
+                context = self.get_browser_context(p, headless=False, hidden=True)
                 page = context.new_page()
 
                 # TikTok upload URL
-                page.goto("https://www.tiktok.com/creator-center/upload?from=upload", wait_until="networkidle", timeout=60000)
+                page.goto("https://www.tiktok.com/creator-center/upload?from=upload", wait_until="domcontentloaded", timeout=60000)
                 time.sleep(5)
 
-                if "login" in page.url:
-                    logger.error("Chưa đăng nhập TikTok! Vui lòng chạy lệnh login TikTok trước.")
+                if "login" in page.url.lower():
+                    logger.error(f"[{self.platform_name}] Chưa đăng nhập TikTok! Vui lòng chạy đăng nhập profile trước.")
                     context.close()
                     return False
 
@@ -51,9 +65,10 @@ class TikTokPublisher(BasePublisher):
                 file_input = upload_frame.locator("input[type='file']")
                 if file_input.count() > 0:
                     file_input.first.set_input_files(str(video_path))
-                    time.sleep(10) # TikTok video processing delay
+                    logger.info(f"[{self.platform_name}] Set file upload thành công. Đang chờ TikTok xử lý...")
+                    time.sleep(10)
                 else:
-                    logger.error("Không tìm thấy ô chọn file upload trên TikTok")
+                    logger.error(f"[{self.platform_name}] Không tìm thấy ô chọn file upload trên TikTok")
                     context.close()
                     return False
 
@@ -67,15 +82,15 @@ class TikTokPublisher(BasePublisher):
                 post_btn = upload_frame.locator("button:has-text('Đăng'), button:has-text('Post')")
                 if post_btn.count() > 0:
                     post_btn.first.click()
-                    logger.info("Đã nhấn nút Đăng trên TikTok. Đang chờ hoàn tất...")
+                    logger.info(f"[{self.platform_name}] ✅ Đã nhấn nút Đăng trên TikTok.")
                     time.sleep(10)
                     context.close()
                     return True
                 else:
-                    logger.error("Không tìm thấy nút Đăng trên TikTok")
+                    logger.error(f"[{self.platform_name}] Không tìm thấy nút Đăng trên TikTok")
                     context.close()
                     return False
 
         except Exception as e:
-            logger.exception(f"Lỗi đăng TikTok: {e}")
+            logger.exception(f"[{self.platform_name}] Lỗi đăng TikTok: {e}")
             return False

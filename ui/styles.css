@@ -1011,4 +1011,113 @@ body {
     }
 }
 
+/* ─── Missing Button Variants ─── */
+.ant-btn-danger {
+    background-color: var(--error-color);
+    color: #fff;
+    border: 1px solid var(--error-color);
+}
+.ant-btn-danger:hover {
+    background-color: #ff7875;
+    border-color: #ff7875;
+}
+.ant-btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+.ant-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ─── Missing Tag Variant ─── */
+.ant-tag-default {
+    background: #f5f5f5;
+    color: var(--text-secondary);
+    border: 1px solid #d9d9d9;
+}
+
+/* ─── Color var ─── */
+:root {
+    --color-error: #ff4d4f;
+    --color-success: #52c41a;
+    --color-warning: #faad14;
+}
+
+/* ─── Social Config Grid ─── */
+.social-config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.social-config-grid > .social-card:first-child {
+    grid-column: 1 / -1; /* Full width for FB profiles card */
+}
+
+.social-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.social-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+}
+.social-card-header h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+}
+.social-card-header i {
+    font-size: 20px;
+}
+
+.social-card-header.fb { background: linear-gradient(135deg, #1877f2, #0d5cbf); }
+.social-card-header.tiktok { background: linear-gradient(135deg, #ee1d52, #010101); }
+.social-card-header.x { background: linear-gradient(135deg, #14171a, #657786); }
+
+.social-card-body {
+    padding: 20px;
+}
+
+/* ─── Responsive Fixes ─── */
+@media (max-width: 900px) {
+    .social-config-grid {
+        grid-template-columns: 1fr;
+    }
+    .stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .dashboard-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ─── Scrollbar styling ─── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #f0f0f0;
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #aaa;
+}
 

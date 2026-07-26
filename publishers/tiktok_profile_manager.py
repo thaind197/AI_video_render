@@ -1,5 +1,5 @@
 """
-FBProfileManager — Quản lý nhiều Facebook profiles (multi-account)
+TikTokProfileManager — Quản lý nhiều TikTok profiles (multi-account)
 
 Mỗi profile = 1 folder session riêng biệt cho Playwright Chromium.
 Cho phép đăng nhập 1 lần / profile, sau đó đăng video đồng thời (parallel).
@@ -16,22 +16,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 logger = logging.getLogger(__name__)
 
 
-class FBProfileManager:
+class TikTokProfileManager:
     """
-    Quản lý nhiều Facebook browser session profiles.
+    Quản lý nhiều TikTok browser session profiles.
 
     Profile structure:
       storage/browser_sessions/
-        facebook/               <- legacy "default" profile session
-        facebook_profiles/
-          <profile_id>/         <- session dir cho mỗi profile mới
-      storage/fb_profiles.json  <- metadata JSON
-
-    Usage:
-        mgr = FBProfileManager()
-        mgr.create_profile("Fanpage 2")
-        mgr.login_profile("abc123")
-        mgr.post_to_profiles_parallel(video_path, caption, ["default", "abc123"])
+        tiktok/               <- legacy "default" profile session
+        tiktok_profiles/
+          <profile_id>/       <- session dir cho mỗi profile mới
+      storage/tiktok_profiles.json  <- metadata JSON
     """
 
     DEFAULT_PROFILE = {
@@ -42,13 +36,13 @@ class FBProfileManager:
 
     def __init__(self):
         from config.settings import (
-            FACEBOOK_SESSION_DIR,
-            FACEBOOK_PROFILES_DIR,
-            FACEBOOK_PROFILES_CONFIG,
+            TIKTOK_SESSION_DIR,
+            TIKTOK_PROFILES_DIR,
+            TIKTOK_PROFILES_CONFIG,
         )
-        self._default_session_dir = FACEBOOK_SESSION_DIR
-        self._profiles_dir = FACEBOOK_PROFILES_DIR
-        self._config_path = FACEBOOK_PROFILES_CONFIG
+        self._default_session_dir = TIKTOK_SESSION_DIR
+        self._profiles_dir = TIKTOK_PROFILES_DIR
+        self._config_path = TIKTOK_PROFILES_CONFIG
         self._lock = threading.Lock()
         self._ensure_default_profile()
 
@@ -75,15 +69,12 @@ class FBProfileManager:
         changed = False
         ids = [p["id"] for p in config.get("profiles", [])]
 
-        # Thêm default nếu chưa có
         if "default" not in ids:
             config.setdefault("profiles", []).insert(0, self.DEFAULT_PROFILE.copy())
             changed = True
 
-        # Migration: thêm field logged_in cho profiles cũ chưa có
         for p in config.get("profiles", []):
             if "logged_in" not in p:
-                # Kế thừa trạng thái từ file system (session dir có file = đã login)
                 sess = self.get_session_dir(p["id"])
                 has_cookies = (sess / "Default" / "Cookies").exists()
                 p["logged_in"] = has_cookies
@@ -102,12 +93,7 @@ class FBProfileManager:
         return self._profiles_dir / profile_id
 
     def is_logged_in(self, profile_id: str) -> bool:
-        """True nếu profile đã đăng nhập (đọc từ JSON config, không phải file system).
-
-        NOTE: Playwright ghi files vào session dir ngay khi mở browser —
-        dù user chưa login. Vì vậy KHÔNG dùng file system để detect login.
-        Thay vào đó dùng flag 'logged_in' trong fb_profiles.json.
-        """
+        """True nếu profile đã đăng nhập (đọc từ JSON config)."""
         config = self._load_config()
         for p in config.get("profiles", []):
             if p["id"] == profile_id:
@@ -140,16 +126,15 @@ class FBProfileManager:
         return result
 
     def create_profile(self, name: str) -> dict:
-        """Tạo profile mới. Trả về profile dict."""
+        """Tạo profile TikTok mới. Trả về profile dict."""
         profile_id = uuid.uuid4().hex[:8]
         now = datetime.now().isoformat()
         profile = {
             "id": profile_id,
-            "name": name.strip() or f"Profile {profile_id[:4]}",
+            "name": name.strip() or f"TikTok Profile {profile_id[:4]}",
             "created_at": now,
-            "logged_in": False,   # Explicit: chưa đăng nhập
+            "logged_in": False,
         }
-        # Tạo thư mục session (sẽ trống cho đến khi user thực sự login)
         session_dir = self.get_session_dir(profile_id)
         session_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,13 +143,13 @@ class FBProfileManager:
             config.setdefault("profiles", []).append(profile)
             self._save_config(config)
 
-        logger.info(f"[FBProfileManager] Tạo profile '{profile['name']}' id={profile_id}")
+        logger.info(f"[TikTokProfileManager] Tạo profile '{profile['name']}' id={profile_id}")
         return {**profile, "logged_in": False}
 
     def delete_profile(self, profile_id: str) -> bool:
         """Xóa profile + toàn bộ session data. Không thể xóa 'default'."""
         if profile_id == "default":
-            logger.warning("[FBProfileManager] Không thể xóa profile 'default'")
+            logger.warning("[TikTokProfileManager] Không thể xóa profile 'default'")
             return False
 
         with self._lock:
@@ -175,12 +160,11 @@ class FBProfileManager:
                 return False
             self._save_config(config)
 
-        # Xóa session dir
         session_dir = self.get_session_dir(profile_id)
         if session_dir.exists():
             shutil.rmtree(session_dir, ignore_errors=True)
 
-        logger.info(f"[FBProfileManager] Đã xóa profile {profile_id}")
+        logger.info(f"[TikTokProfileManager] Đã xóa profile TikTok {profile_id}")
         return True
 
     def get_profile(self, profile_id: str):
@@ -195,10 +179,7 @@ class FBProfileManager:
     # ---------------------------------------------------------
 
     def login_profile(self, profile_id: str):
-        """Mở browser TOÀN MÀN HÌNH để user đăng nhập. Blocking.
-
-        Sau khi user đóng cửa sổ browser, tự động set logged_in=True trong config.
-        """
+        """Mở browser để user đăng nhập TikTok. Blocking."""
         from publishers.base_publisher import BasePublisher
 
         profile = self.get_profile(profile_id)
@@ -207,36 +188,29 @@ class FBProfileManager:
 
         session_dir = self.get_session_dir(profile_id)
         pub = BasePublisher(
-            platform_name=f"Facebook [{profile['name']}]",
+            platform_name=f"TikTok [{profile['name']}]",
             session_dir=session_dir,
         )
-        logger.info(f"[FBProfileManager] Mở browser đăng nhập: {profile['name']}")
+        logger.info(f"[TikTokProfileManager] Mở browser đăng nhập TikTok: {profile['name']}")
 
-        # Reset trạng thái trước khi mở browser
         self._set_login_status(profile_id, False)
+        pub.interactive_login("https://www.tiktok.com/upload")
 
-        # Mở browser — BLOCKING cho đến khi user đóng cửa sổ
-        pub.interactive_login("https://www.facebook.com/")
-
-        # Chỉ set logged_in=True SAU KHI user đóng browser (interactive_login đã return)
-        # Kiểm tra session dir có dữ liệu thực sự (Cookies file từ Chromium)
         cookies_file = session_dir / "Default" / "Cookies"
-        if cookies_file.exists() and cookies_file.stat().st_size > 5000:
+        if cookies_file.exists() and cookies_file.stat().st_size > 3000:
             self._set_login_status(profile_id, True)
-            logger.info(f"[FBProfileManager] Đã lưu session login: {profile['name']}")
+            logger.info(f"[TikTokProfileManager] Đã lưu session login TikTok: {profile['name']}")
         else:
-            logger.warning(f"[FBProfileManager] Browser đóng nhưng không tìm thấy cookie — có thể chưa login: {profile['name']}")
+            logger.warning(f"[TikTokProfileManager] Browser đóng nhưng không tìm thấy cookie — có thể chưa login: {profile['name']}")
 
     def logout_profile(self, profile_id: str) -> bool:
         """Xóa session data của profile (logout)."""
-        # Set logged_in=False trước
         self._set_login_status(profile_id, False)
-        # Xóa session dir để clear cookies/data
         session_dir = self.get_session_dir(profile_id)
         if session_dir.exists():
             shutil.rmtree(session_dir, ignore_errors=True)
             session_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"[FBProfileManager] Đã logout profile {profile_id}")
+            logger.info(f"[TikTokProfileManager] Đã logout TikTok profile {profile_id}")
             return True
         return False
 
@@ -254,44 +228,30 @@ class FBProfileManager:
         tags: list = None,
     ) -> dict:
         """
-        Đăng video lên nhiều profiles ĐỒNG THỜI bằng ThreadPoolExecutor.
-
-        Mỗi profile chạy Playwright trong 1 thread riêng (không xung đột).
-        Browser ẩn (off-screen) nên không hiện ra màn hình.
-
-        Args:
-            video_path:  Path đến file video
-            caption:     Caption/mô tả bài đăng
-            profile_ids: Danh sách profile_id cần đăng
-            max_workers: Số browser chạy đồng thời (default 3, tối đa ~5)
-            on_result:   Callback(profile_id, success: bool, error: str | None)
-            tags:        Hashtags (optional)
-
-        Returns:
-            dict {profile_id: True/False}
+        Đăng video lên nhiều TikTok profiles ĐỒNG THỜI bằng ThreadPoolExecutor.
         """
         results = {}
 
         def _post_one(profile_id: str):
-            from publishers.facebook_publisher import FacebookPublisher
+            from publishers.tiktok_publisher import TikTokPublisher
             profile = self.get_profile(profile_id)
             pname = profile["name"] if profile else profile_id
-            logger.info(f"[Thread-{profile_id}] Bắt đầu đăng: {pname}")
+            logger.info(f"[TikTokThread-{profile_id}] Bắt đầu đăng: {pname}")
             try:
-                pub = FacebookPublisher(profile_id=profile_id)
+                pub = TikTokPublisher(profile_id=profile_id)
                 ok = pub.post_video(video_path, caption, tags)
-                logger.info(f"[Thread-{profile_id}] {'OK' if ok else 'FAIL'}: {pname}")
+                logger.info(f"[TikTokThread-{profile_id}] {'OK' if ok else 'FAIL'}: {pname}")
                 return (profile_id, ok, None)
             except Exception as e:
-                logger.exception(f"[Thread-{profile_id}] Lỗi: {e}")
+                logger.exception(f"[TikTokThread-{profile_id}] Lỗi: {e}")
                 return (profile_id, False, str(e))
 
         logger.info(
-            f"[FBProfileManager] Bắt đầu parallel: {len(profile_ids)} profiles, "
+            f"[TikTokProfileManager] Bắt đầu parallel: {len(profile_ids)} profiles, "
             f"max_workers={max_workers}, video={video_path.name}"
         )
 
-        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="fbpost") as pool:
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="tiktokpost") as pool:
             futures = {
                 pool.submit(_post_one, pid): pid
                 for pid in profile_ids
@@ -307,6 +267,6 @@ class FBProfileManager:
 
         success_count = sum(1 for v in results.values() if v)
         logger.info(
-            f"[FBProfileManager] Xong: {success_count}/{len(profile_ids)} profiles thanh cong"
+            f"[TikTokProfileManager] Xong: {success_count}/{len(profile_ids)} profiles TikTok thanh cong"
         )
         return results

@@ -68,9 +68,11 @@ FACEBOOK_SESSION_DIR = BROWSER_DATA_DIR / "facebook"  # legacy default profile
 FACEBOOK_PROFILES_DIR = BROWSER_DATA_DIR / "facebook_profiles"  # multi-profile storage
 FACEBOOK_PROFILES_CONFIG = STORAGE_DIR / "fb_profiles.json"     # profile metadata
 TIKTOK_SESSION_DIR = BROWSER_DATA_DIR / "tiktok"
+TIKTOK_PROFILES_DIR = BROWSER_DATA_DIR / "tiktok_profiles"
+TIKTOK_PROFILES_CONFIG = STORAGE_DIR / "tiktok_profiles.json"
 X_SESSION_DIR = BROWSER_DATA_DIR / "x"
 
-for sess_folder in [FACEBOOK_SESSION_DIR, FACEBOOK_PROFILES_DIR, TIKTOK_SESSION_DIR, X_SESSION_DIR]:
+for sess_folder in [FACEBOOK_SESSION_DIR, FACEBOOK_PROFILES_DIR, TIKTOK_SESSION_DIR, TIKTOK_PROFILES_DIR, X_SESSION_DIR]:
     sess_folder.mkdir(parents=True, exist_ok=True)
 
 def reload_settings():

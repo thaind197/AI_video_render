@@ -152,17 +152,41 @@ class MultiThreadQueueManager:
         tiktok_success = False
         x_success = False
 
-        # Priority 1: Facebook Reels
-        if has_fb and not job.get('fb_posted'):
-            fb_success = self.fb_pub.post_video(video_path, caption, tags)
-            if fb_success:
-                self.db.update_job(job_id, fb_posted=1)
+        # Priority 1: Facebook Reels (Multi-Profile Parallel Posting)
+        if not job.get('fb_posted'):
+            from publishers.fb_profile_manager import FBProfileManager
+            fb_mgr = FBProfileManager()
+            logged_in_fb_profiles = [p["id"] for p in fb_mgr.list_profiles() if p.get("logged_in")]
+            if logged_in_fb_profiles:
+                logger.info(f"Job #{job_id}: Tự động đăng đa luồng cho {len(logged_in_fb_profiles)} profiles Facebook...")
+                results = fb_mgr.post_to_profiles_parallel(
+                    video_path=video_path,
+                    caption=caption,
+                    profile_ids=logged_in_fb_profiles,
+                    max_workers=min(len(logged_in_fb_profiles), 5),
+                    tags=tags
+                )
+                if any(results.values()):
+                    self.db.update_job(job_id, fb_posted=1)
+                    fb_success = True
 
-        # Priority 2: TikTok
-        if has_tiktok and not job.get('tiktok_posted'):
-            tiktok_success = self.tiktok_pub.post_video(video_path, caption, tags)
-            if tiktok_success:
-                self.db.update_job(job_id, tiktok_posted=1)
+        # Priority 2: TikTok (Multi-Profile Parallel Posting)
+        if not job.get('tiktok_posted'):
+            from publishers.tiktok_profile_manager import TikTokProfileManager
+            tiktok_mgr = TikTokProfileManager()
+            logged_in_tiktok_profiles = [p["id"] for p in tiktok_mgr.list_profiles() if p.get("logged_in")]
+            if logged_in_tiktok_profiles:
+                logger.info(f"Job #{job_id}: Tự động đăng đa luồng cho {len(logged_in_tiktok_profiles)} profiles TikTok...")
+                results = tiktok_mgr.post_to_profiles_parallel(
+                    video_path=video_path,
+                    caption=caption,
+                    profile_ids=logged_in_tiktok_profiles,
+                    max_workers=min(len(logged_in_tiktok_profiles), 5),
+                    tags=tags
+                )
+                if any(results.values()):
+                    self.db.update_job(job_id, tiktok_posted=1)
+                    tiktok_success = True
 
         # Priority 3: X (Twitter)
         if has_x and not job.get('x_posted'):
@@ -206,8 +230,10 @@ class MultiThreadQueueManager:
             self._safe_submit(self.process_pool, self.video_processor.process_render_job, job['id'])
 
         # 4. Process READY_TO_POST Jobs -> Social Auto Post
-        has_fb = self.fb_pub.is_logged_in()
-        has_tiktok = self.tiktok_pub.is_logged_in()
+        from publishers.fb_profile_manager import FBProfileManager
+        from publishers.tiktok_profile_manager import TikTokProfileManager
+        has_fb = any(p.get("logged_in") for p in FBProfileManager().list_profiles())
+        has_tiktok = any(p.get("logged_in") for p in TikTokProfileManager().list_profiles())
         has_x = self.x_pub.is_logged_in()
 
         if has_fb or has_tiktok or has_x:

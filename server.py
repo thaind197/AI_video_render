@@ -1,10 +1,12 @@
 import threading
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+import os
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -18,10 +20,31 @@ from publishers.x_publisher import XPublisher
 
 logger = logging.getLogger("FastAPIServer")
 
+# Initialize Manager & DB
+db = DatabaseManager()
+queue_mgr = MultiThreadQueueManager()
+engine_thread = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Auto-start Queue Manager on server startup using modern lifespan API"""
+    global engine_thread
+    if not queue_mgr.is_running:
+        def _run():
+            queue_mgr.start_loop(poll_interval_sec=3)
+        engine_thread = threading.Thread(target=_run, daemon=True)
+        engine_thread.start()
+        logger.info("Đã tự động khởi chạy Queue Manager đa luồng khi server startup!")
+    yield
+    # Shutdown
+    if queue_mgr.is_running:
+        queue_mgr.stop()
+
 app = FastAPI(
     title="Veo Studio AI PRO API",
     description="Backend REST API Server for AI Short Video Automation & Social Publishing",
-    version="2.5.0"
+    version="2.5.0",
+    lifespan=lifespan
 )
 
 # CORS Middleware
@@ -32,22 +55,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize Manager & DB
-db = DatabaseManager()
-queue_mgr = MultiThreadQueueManager()
-engine_thread = None
-
-@app.on_event("startup")
-def startup_event():
-    global engine_thread
-    if not queue_mgr.is_running:
-        def _run():
-            queue_mgr.start_loop(poll_interval_sec=3)
-
-        engine_thread = threading.Thread(target=_run, daemon=True)
-        engine_thread.start()
-        logger.info("Đã tự động khởi chạy Queue Manager đa luồng khi server startup!")
 
 # Pydantic Schemas
 class PromptBatchRequest(BaseModel):
@@ -431,7 +438,7 @@ def get_social_status():
     }
 
 @app.post("/api/social/login")
-def social_login(req: SocialLoginRequest, background_tasks: BackgroundTasks):
+def social_login(req: SocialLoginRequest):
     """Trigger browser window for manual user login to social network"""
     platform = req.platform.lower()
     if platform == "facebook":
@@ -446,7 +453,9 @@ def social_login(req: SocialLoginRequest, background_tasks: BackgroundTasks):
     else:
         raise HTTPException(status_code=400, detail="Mạng xã hội không hỗ trợ")
 
-    background_tasks.add_task(pub.interactive_login, login_url)
+    # Dùng Thread riêng để tránh xung đột asyncio + sync_playwright
+    t = threading.Thread(target=pub.interactive_login, args=(login_url,), daemon=True, name=f"login_{platform}")
+    t.start()
     return {"status": "success", "message": f"Đã kích hoạt cửa sổ đăng nhập {req.platform}"}
 
 @app.post("/api/social/logout")
@@ -564,19 +573,44 @@ def delete_fb_profile(profile_id: str):
     return {"status": "success", "message": f"Đã xóa profile {profile_id}"}
 
 
+_login_in_progress = {}  # profile_id -> True khi dang login
+
 @app.post("/api/fb-profiles/{profile_id}/login")
-def login_fb_profile(profile_id: str, background_tasks: BackgroundTasks):
-    """Mở browser fullscreen để user đăng nhập profile (chạy background)."""
+def login_fb_profile(profile_id: str):
+    """Mở browser fullscreen để user đăng nhập profile (chạy ngầm trong thread riêng)."""
     from publishers.fb_profile_manager import FBProfileManager
+
+    # Chan login trung lap
+    if _login_in_progress.get(profile_id):
+        return {"status": "error", "message": "Đang mở browser đăng nhập cho profile này rồi. Vui lòng đợi."}
+
     mgr = FBProfileManager()
-    if not mgr.get_profile(profile_id):
+    profile = mgr.get_profile(profile_id)
+    if not profile:
         raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' không tồn tại")
 
-    def _do_login():
-        mgr.login_profile(profile_id)
+    def _safe_print(msg: str):
+        try:
+            print(msg.encode('ascii', errors='replace').decode(), flush=True)
+        except Exception:
+            pass
 
-    background_tasks.add_task(_do_login)
-    return {"status": "success", "message": f"Đang mở browser đăng nhập profile '{profile_id}'..."}
+    def _do_login():
+        import traceback
+        try:
+            _login_in_progress[profile_id] = True
+            _safe_print(f"[Login-Thread] START: profile '{profile['name']}' ({profile_id})")
+            mgr.login_profile(profile_id)
+            _safe_print(f"[Login-Thread] DONE: profile '{profile['name']}' ({profile_id})")
+        except Exception as e:
+            _safe_print(f"[Login-Thread] ERROR: {str(e)}")
+            traceback.print_exc()
+        finally:
+            _login_in_progress.pop(profile_id, None)
+
+    t = threading.Thread(target=_do_login, daemon=True, name=f"fb_login_{profile_id}")
+    t.start()
+    return {"status": "success", "message": f"Đang mở browser đăng nhập profile '{profile['name']}'..."}
 
 
 @app.post("/api/fb-profiles/{profile_id}/logout")
@@ -597,6 +631,90 @@ def get_fb_profile_status(profile_id: str):
     if not profile:
         raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' không tồn tại")
     return profile
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ─── TikTok Multi-Profile Management ────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/tiktok-profiles")
+def list_tiktok_profiles():
+    """Lấy danh sách tất cả TikTok profiles kèm trạng thái đăng nhập."""
+    from publishers.tiktok_profile_manager import TikTokProfileManager
+    mgr = TikTokProfileManager()
+    return {"profiles": mgr.list_profiles()}
+
+
+@app.post("/api/tiktok-profiles")
+def create_tiktok_profile(req: CreateProfileRequest):
+    """Tạo profile TikTok mới."""
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Tên profile không được để trống")
+    from publishers.tiktok_profile_manager import TikTokProfileManager
+    mgr = TikTokProfileManager()
+    profile = mgr.create_profile(req.name)
+    return {"status": "success", "profile": profile}
+
+
+@app.delete("/api/tiktok-profiles/{profile_id}")
+def delete_tiktok_profile(profile_id: str):
+    """Xóa profile TikTok + toàn bộ session data."""
+    if profile_id == "default":
+        raise HTTPException(status_code=400, detail="Không thể xóa profile 'Mặc Định'")
+    from publishers.tiktok_profile_manager import TikTokProfileManager
+    mgr = TikTokProfileManager()
+    ok = mgr.delete_profile(profile_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' không tồn tại")
+    return {"status": "success", "message": f"Đã xóa profile TikTok {profile_id}"}
+
+
+_tiktok_login_in_progress = {}
+
+@app.post("/api/tiktok-profiles/{profile_id}/login")
+def login_tiktok_profile(profile_id: str):
+    """Mở browser để user đăng nhập profile TikTok."""
+    from publishers.tiktok_profile_manager import TikTokProfileManager
+
+    if _tiktok_login_in_progress.get(profile_id):
+        return {"status": "error", "message": "Đang mở browser đăng nhập cho profile này rồi. Vui lòng đợi."}
+
+    mgr = TikTokProfileManager()
+    profile = mgr.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' không tồn tại")
+
+    def _safe_print(msg: str):
+        try:
+            print(msg.encode('ascii', errors='replace').decode(), flush=True)
+        except Exception:
+            pass
+
+    def _do_login():
+        import traceback
+        try:
+            _tiktok_login_in_progress[profile_id] = True
+            _safe_print(f"[TikTokLogin-Thread] START: profile '{profile['name']}' ({profile_id})")
+            mgr.login_profile(profile_id)
+            _safe_print(f"[TikTokLogin-Thread] DONE: profile '{profile['name']}' ({profile_id})")
+        except Exception as e:
+            _safe_print(f"[TikTokLogin-Thread] ERROR: {str(e)}")
+            traceback.print_exc()
+        finally:
+            _tiktok_login_in_progress.pop(profile_id, None)
+
+    t = threading.Thread(target=_do_login, daemon=True, name=f"tiktok_login_{profile_id}")
+    t.start()
+    return {"status": "success", "message": f"Đang mở browser đăng nhập profile TikTok '{profile['name']}'..."}
+
+
+@app.post("/api/tiktok-profiles/{profile_id}/logout")
+def logout_tiktok_profile(profile_id: str):
+    """Xóa session của profile TikTok (logout)."""
+    from publishers.tiktok_profile_manager import TikTokProfileManager
+    mgr = TikTokProfileManager()
+    ok = mgr.logout_profile(profile_id)
+    return {"status": "success" if ok else "error", "message": "Đã logout TikTok" if ok else "Không tìm thấy session"}
 
 
 # ─── Post to multiple profiles (parallel) ───
@@ -680,7 +798,81 @@ def post_to_profiles(req: PostToProfilesRequest, background_tasks: BackgroundTas
 @app.get("/api/fb-post-logs/{job_id}")
 def get_fb_post_logs(job_id: int):
     """Xem lịch sử đăng FB của 1 job (per-profile)."""
-    logs = db.get_fb_post_logs(job_id)
+    return {"logs": db.get_fb_post_logs(job_id)}
+
+
+@app.post("/api/social/post-to-tiktok-profiles")
+def post_to_tiktok_profiles(req: PostToProfilesRequest, background_tasks: BackgroundTasks):
+    """Đăng 1 job lên nhiều TikTok profiles ĐỒNG THỜI (parallel Playwright)."""
+    job = db.get_job(req.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy Job #{req.job_id}")
+
+    video_path_str = job.get("video_final_path") or job.get("video_raw_path")
+    if not video_path_str or not Path(video_path_str).exists():
+        raise HTTPException(status_code=400, detail=f"Job #{req.job_id} chưa có video")
+
+    if not req.profile_ids:
+        raise HTTPException(status_code=400, detail="Chưa chọn profile TikTok nào")
+
+    import json as _json
+    title = (job.get("title") or "").strip()
+    voiceover = (job.get("voiceover_text") or "").strip()
+    base = f"{title}\n\n" if title else ""
+    remaining = 2000 - len(base)
+    if len(voiceover) > remaining:
+        voiceover = voiceover[:remaining].rsplit(' ', 1)[0] + "..."
+    caption = base + voiceover
+
+    raw_tags = job.get("tags", [])
+    if isinstance(raw_tags, str):
+        try: raw_tags = _json.loads(raw_tags)
+        except Exception: raw_tags = []
+    tags = raw_tags if isinstance(raw_tags, list) else []
+
+    log_ids = {}
+    from publishers.tiktok_profile_manager import TikTokProfileManager
+    mgr = TikTokProfileManager()
+    for pid in req.profile_ids:
+        profile = mgr.get_profile(pid)
+        pname = profile["name"] if profile else pid
+        log_id = db.log_tiktok_post(req.job_id, pid, pname)
+        log_ids[pid] = log_id
+
+    def _do_parallel():
+        video_path = Path(video_path_str)
+
+        def on_result(pid, ok, err):
+            status = "success" if ok else "failed"
+            db.update_tiktok_post_log(log_ids[pid], status, err)
+            if ok:
+                db.update_job(req.job_id, tiktok_posted=1, status=JobStatus.PUBLISHED.value)
+
+        for pid, lid in log_ids.items():
+            db.update_tiktok_post_log(lid, "posting")
+
+        mgr.post_to_profiles_parallel(
+            video_path=video_path,
+            caption=caption,
+            profile_ids=req.profile_ids,
+            max_workers=min(req.max_workers, 5),
+            on_result=on_result,
+            tags=tags,
+        )
+
+    background_tasks.add_task(_do_parallel)
+    profile_names = [mgr.get_profile(p)["name"] if mgr.get_profile(p) else p for p in req.profile_ids]
+    return {
+        "status": "success",
+        "message": f"Đang đăng Job #{req.job_id} lên {len(req.profile_ids)} profiles TikTok: {', '.join(profile_names)}",
+        "log_ids": log_ids,
+    }
+
+
+@app.get("/api/tiktok-post-logs/{job_id}")
+def get_tiktok_post_logs(job_id: int):
+    """Xem lịch sử đăng TikTok của 1 job (per-profile)."""
+    logs = db.get_tiktok_post_logs(job_id)
     total = len(logs)
     success = sum(1 for l in logs if l["status"] == "success")
     return {
@@ -696,10 +888,13 @@ def get_fb_post_logs(job_id: int):
 
 
 
-# ─── Video Stream API (Smart — works for both clone & generated videos) ───
-@app.get("/api/video-stream/{job_id}")
-def video_stream(job_id: int):
-    """Serve video file for preview — handles both clone (downloads/) and generated (final/) videos"""
+# ─── Video Preview API (Auto-transcode HEVC→H.264 for browser compatibility) ───
+@app.get("/api/video-preview/{job_id}")
+def video_preview(job_id: int):
+    """Stream video with auto-transcode: HEVC/H.265 → H.264 so all browsers can play it."""
+    import subprocess
+    import imageio_ffmpeg
+
     with db._get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT video_final_path, video_raw_path FROM jobs WHERE id = ?", (job_id,))
@@ -715,11 +910,138 @@ def video_stream(job_id: int):
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File không tồn tại: {video_path}")
 
-    return FileResponse(
-        path=str(path),
-        media_type="video/mp4",
-        headers={"Accept-Ranges": "bytes"},
+    # Detect codec
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    probe = subprocess.run(
+        [ffmpeg_exe, "-i", str(path)],
+        capture_output=True, text=True, timeout=10
     )
+    needs_transcode = "hevc" in probe.stderr.lower() or "hvc1" in probe.stderr.lower()
+
+    if needs_transcode:
+        # Transcode HEVC → H.264 on-the-fly via pipe
+        cmd = [
+            ffmpeg_exe,
+            "-i", str(path),
+            "-vcodec", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "23",
+            "-acodec", "aac",
+            "-movflags", "frag_keyframe+empty_moov+faststart",
+            "-f", "mp4",
+            "pipe:1"
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+        def iter_transcode():
+            try:
+                while True:
+                    chunk = proc.stdout.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                proc.stdout.close()
+                proc.wait()
+
+        headers = {"Cache-Control": "no-cache", "Accept-Ranges": "none"}
+        return StreamingResponse(iter_transcode(), media_type="video/mp4", headers=headers)
+    else:
+        # Already H.264 — use range-based streaming
+        file_size = os.path.getsize(str(path))
+        CHUNK_SIZE = 1024 * 1024
+
+        def iter_full():
+            with open(str(path), "rb") as f:
+                while True:
+                    chunk = f.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        headers = {"Accept-Ranges": "bytes", "Content-Length": str(file_size)}
+        return StreamingResponse(iter_full(), media_type="video/mp4", headers=headers)
+
+
+# ─── Video Stream API (Smart — works for both clone & generated videos) ───
+@app.get("/api/video-stream/{job_id}")
+def video_stream(job_id: int, request: Request):
+    """Serve video file for preview with proper HTTP Range support for browser HTML5 video player"""
+
+    with db._get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT video_final_path, video_raw_path FROM jobs WHERE id = ?", (job_id,))
+        row = cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy Job #{job_id}")
+
+    video_path = row["video_final_path"] or row["video_raw_path"]
+    if not video_path:
+        raise HTTPException(status_code=404, detail=f"Job #{job_id} chưa có video")
+
+    path = Path(video_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"File không tồn tại: {video_path}")
+
+    # Check if video is HEVC (H.265) — if so, delegate to video_preview for H.264 transcode
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        probe = subprocess.run([ffmpeg_exe, "-i", str(path)], capture_output=True, text=True, timeout=5)
+        if "hevc" in probe.stderr.lower() or "hvc1" in probe.stderr.lower():
+            return video_preview(job_id)
+    except Exception:
+        pass
+
+    file_size = os.path.getsize(str(path))
+    range_header = request.headers.get("range", None)
+
+    # Chunk size: 1MB
+    CHUNK_SIZE = 1024 * 1024
+
+    if range_header:
+        # Parse Range: bytes=start-end
+        byte_range = range_header.replace("bytes=", "").strip()
+        start_str, _, end_str = byte_range.partition("-")
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else file_size - 1
+        end = min(end, file_size - 1)
+        content_length = end - start + 1
+
+        def iter_file():
+            with open(str(path), "rb") as f:
+                f.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk = f.read(min(CHUNK_SIZE, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(content_length),
+            "Content-Type": "video/mp4",
+        }
+        return StreamingResponse(iter_file(), status_code=206, headers=headers, media_type="video/mp4")
+    else:
+        # Full file response
+        def iter_full():
+            with open(str(path), "rb") as f:
+                while True:
+                    chunk = f.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Content-Type": "video/mp4",
+        }
+        return StreamingResponse(iter_full(), status_code=200, headers=headers, media_type="video/mp4")
 
 # Serve Static UI & Videos
 UI_DIR = Path(__file__).resolve().parent / "ui"
@@ -735,4 +1057,6 @@ def read_root():
     return RedirectResponse(url="/ui/")
 
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    # reload=False: cần thiết để threading.Thread có thể mở browser window trên desktop
+    # (reload=True tạo child process riêng, browser window sẽ không hiện trên màn hình)
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
