@@ -55,10 +55,14 @@ def display_status():
 
 def login_social_menu():
     while True:
-        console.print("\n[bold yellow]--- LỰA CHỌN ĐĂNG NHẬP TRÌNH DUYỆT BẢO MẬT (CHỈ CẦN LÀM 1 LẦN) ---[/bold yellow]")
+        console.print("\n[bold yellow]--- LỰA CHỌN QUẢN LÝ TÀI KHOẢN SOCIAL (ĐĂNG NHẬP / ĐĂNG XUẤT) ---[/bold yellow]")
         console.print("1. Đăng nhập Facebook")
         console.print("2. Đăng nhập TikTok")
         console.print("3. Đăng nhập X (Twitter)")
+        console.print("4. ❌ Đăng xuất Facebook")
+        console.print("5. ❌ Đăng xuất TikTok")
+        console.print("6. ❌ Đăng xuất X (Twitter)")
+        console.print("7. 🚨 Đăng xuất TẤT CẢ các tài khoản")
         console.print("0. Quay lại Menu chính")
 
         choice = input("\nNhập lựa chọn của bạn: ").strip()
@@ -68,10 +72,25 @@ def login_social_menu():
             TikTokPublisher().login_manual()
         elif choice == "3":
             XPublisher().login_manual()
+        elif choice == "4":
+            if FacebookPublisher().logout():
+                console.print("[bold green]Đã đăng xuất Facebook thành công![/bold green]")
+        elif choice == "5":
+            if TikTokPublisher().logout():
+                console.print("[bold green]Đã đăng xuất TikTok thành công![/bold green]")
+        elif choice == "6":
+            if XPublisher().logout():
+                console.print("[bold green]Đã đăng xuất X (Twitter) thành công![/bold green]")
+        elif choice == "7":
+            FacebookPublisher().logout()
+            TikTokPublisher().logout()
+            XPublisher().logout()
+            console.print("[bold green]Đã đăng xuất TẤT CẢ tài khoản mạng xã hội thành công![/bold green]")
         elif choice == "0":
             break
         else:
             console.print("[red]Lựa chọn không hợp lệ![/red]")
+
 
 def main():
     display_banner()
