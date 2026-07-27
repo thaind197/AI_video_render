@@ -1,0 +1,32 @@
+# ============================================
+# Veo Studio AI PRO - Docker Compose
+# ============================================
+
+services:
+  veo-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: veo-studio-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist storage data (videos, database, browser sessions)
+      - ./storage:/app/storage
+      # Mount .env for API keys configuration
+      - ./.env:/app/.env:ro
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

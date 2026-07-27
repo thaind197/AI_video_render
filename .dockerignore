@@ -1,0 +1,52 @@
+# Git & Version Control
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+build/
+*.spec
+*.egg-info/
+
+# Storage runtime data (mounted as volume)
+storage/browser_sessions/
+storage/downloads/
+storage/generated/
+storage/final/
+storage/*.db
+storage/*.db-journal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs & media
+*.log
+*.mp4
+*.webp
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Batch scripts
+*.bat
+
+# Database files at root
+veo_jobs.db
