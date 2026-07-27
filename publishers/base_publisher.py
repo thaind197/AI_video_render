@@ -37,15 +37,39 @@ class BasePublisher:
         self.session_dir = session_dir
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
+    def kill_orphaned_chrome(self):
+        """Kill background chrome.exe processes locking this session_dir"""
+        try:
+            norm_dir = str(self.session_dir.resolve()).lower()
+            cmd = ["powershell", "-NoProfile", "-Command",
+                   "Get-WmiObject Win32_Process -Filter \"name='chrome.exe'\" | Select-Object ProcessId, CommandLine | ConvertTo-Json"]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if res.stdout.strip():
+                import json
+                data = json.loads(res.stdout)
+                if isinstance(data, dict):
+                    data = [data]
+                for item in data:
+                    cmdline = (item.get("CommandLine") or "").lower()
+                    pid = item.get("ProcessId")
+                    if norm_dir in cmdline and pid:
+                        logger.info(f"[{self.platform_name}] Killeing orphan Chrome PID={pid} for session: {self.session_dir.name}")
+                        subprocess.run(["taskkill", "/F", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            logger.warning(f"[{self.platform_name}] Lỗi check orphan Chrome: {e}")
+
     def get_browser_context(self, p, headless: bool = False, hidden: bool = True) -> BrowserContext:
-        """Get persistent browser context for automated posting (hidden background browser).
+        """Get persistent browser context for automated posting (hidden background browser)."""
+        self.kill_orphaned_chrome()
+        # Tự động xóa lock files còn sót từ phiên trước
+        for lock_name in ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
+            l_path = self.session_dir / lock_name
+            if l_path.exists():
+                try:
+                    l_path.unlink()
+                except Exception:
+                    pass
 
-        Args:
-            headless: True = headless mode (NOT recommended for Facebook).
-            hidden:   True = off-screen (background posting). False = visible.
-
-        NOTE: For LOGIN, use interactive_login() which launches a separate process.
-        """
         if headless:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=str(self.session_dir),
@@ -135,7 +159,7 @@ class BasePublisher:
 
         # Chay _login_browser.py nhu subprocess rieng biet
         # KHONG dung CREATE_NEW_CONSOLE de output van hien trong server console
-        cmd = [python_exe, str(script_path), str(self.session_dir), login_url]
+        cmd = [python_exe, str(script_path), str(self.session_dir.resolve()), login_url]
         _p(f"Launching subprocess: {' '.join(cmd[:2])} ...")
 
         try:

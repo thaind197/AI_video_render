@@ -1086,6 +1086,7 @@ body {
 .social-card-header.fb { background: linear-gradient(135deg, #1877f2, #0d5cbf); }
 .social-card-header.tiktok { background: linear-gradient(135deg, #ee1d52, #010101); }
 .social-card-header.x { background: linear-gradient(135deg, #14171a, #657786); }
+.social-card-header.labs { background: linear-gradient(135deg, #4285f4, #34a853); }
 
 .social-card-body {
     padding: 20px;

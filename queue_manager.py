@@ -11,6 +11,7 @@ from core.script_engine import ScriptEngine
 from core.video_cloner import VideoCloner
 from core.veo_generator import VeoGenerator
 from core.video_processor import VideoProcessor
+from core.labs_google_generator import LabsGoogleGenerator
 from publishers.facebook_publisher import FacebookPublisher
 from publishers.tiktok_publisher import TikTokPublisher
 from publishers.x_publisher import XPublisher
@@ -25,6 +26,7 @@ class MultiThreadQueueManager:
         self.script_engine = ScriptEngine()
         self.cloner = VideoCloner()
         self.veo_gen = VeoGenerator()
+        self.labs_gen = LabsGoogleGenerator()
         self.video_processor = VideoProcessor()
         self.fb_pub = FacebookPublisher()
         self.tiktok_pub = TikTokPublisher()
@@ -199,6 +201,33 @@ class MultiThreadQueueManager:
         else:
             self.db.update_job(job_id, status=JobStatus.READY_TO_POST.value)
 
+    def process_labs_google_job(self, job_id: int):
+        """Worker function: Process job using labs.google browser automation"""
+        job = self.db.get_job(job_id)
+        if not job or job['status'] not in (JobStatus.SCRIPTED.value, JobStatus.PENDING.value):
+            return
+
+        try:
+            from config.settings import GENERATED_DIR
+            self.db.update_job(job_id, status=JobStatus.GENERATING_VEO.value)
+            out_raw_path = GENERATED_DIR / f"raw_{job_id}.mp4"
+
+            prompt = job.get('veo_prompt') or job.get('source_input') or job.get('title')
+            ok = self.labs_gen.generate_video(prompt=prompt, out_path=out_raw_path)
+
+            if ok and out_raw_path.exists():
+                self.db.update_job(
+                    job_id,
+                    video_raw_path=str(out_raw_path),
+                    status=JobStatus.VEO_DONE.value
+                )
+            else:
+                logger.warning(f"Job #{job_id}: labs.google browser automation không thành công, thử dùng VeoGenerator API...")
+                self.veo_gen.process_veo_job(job_id)
+        except Exception as e:
+            logger.exception(f"Lỗi LabsGoogle job #{job_id}: {e}")
+            self.db.update_job(job_id, status=JobStatus.FAILED.value, error_msg=str(e))
+
     def run_worker_cycle(self):
         """Single processing iteration across all queues with duplication protection and quota throttling"""
         # 1. Process PENDING Jobs
@@ -206,13 +235,18 @@ class MultiThreadQueueManager:
         for job in pending_jobs:
             if job['source_type'] == 'PROMPT':
                 self._safe_submit(self.script_pool, self.script_engine.process_pending_script_job, job['id'])
+            elif job['source_type'] == 'LABS_PROMPT':
+                self.db.update_job(job['id'], status=JobStatus.SCRIPTED.value)
             elif job['source_type'] == 'CLONE':
                 self._safe_submit(self.script_pool, self.cloner.process_clone_job, job['id'])
 
-        # 2. Process SCRIPTED Jobs -> Veo API
+        # 2. Process SCRIPTED Jobs -> Veo API or Labs Google Browser Automation
         scripted_jobs = self.db.get_jobs_by_status(JobStatus.SCRIPTED, limit=MAX_CONCURRENT_VEO_JOBS)
         for job in scripted_jobs:
-            self._safe_submit(self.veo_pool, self.veo_gen.process_veo_job, job['id'])
+            if job.get('source_type') == 'LABS_PROMPT':
+                self._safe_submit(self.veo_pool, self.process_labs_google_job, job['id'])
+            else:
+                self._safe_submit(self.veo_pool, self.veo_gen.process_veo_job, job['id'])
 
         # 2.5 Process QUOTA_WAIT retry -> only every 180 seconds to avoid API ban & spam
         now = time.time()

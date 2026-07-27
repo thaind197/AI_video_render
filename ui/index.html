@@ -14,7 +14,7 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2.7">
 </head>
 
 <body class="ant-light-theme">
@@ -387,10 +387,14 @@
                                         style="width: 100%;">
                                 </div>
                             </div>
-                            <button type="submit" class="ant-btn ant-btn-primary ant-btn-lg" style="margin-top: 25px;">
-                                <i class="fa-solid fa-wand-magic-sparkles"></i> Sinh Batch Video Kịch Bản & Thêm Vào
-                                Queue
-                            </button>
+                            <div style="display: flex; gap: 12px; margin-top: 25px; flex-wrap: wrap;">
+                                <button type="submit" class="ant-btn ant-btn-primary ant-btn-lg">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Sinh Batch Video Kịch Bản (Gemini API)
+                                </button>
+                                <button type="button" class="ant-btn ant-btn-lg" style="background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; border: none; font-weight: 600;" onclick="generateViaLabsGoogle(document.getElementById('prompt-topic').value)">
+                                    <i class="fa-brands fa-google"></i> Mở Labs.google & Tạo Video Từ Prompt
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -487,6 +491,9 @@
                     </button>
                     <button class="social-subtab-btn" data-subtab="x" onclick="switchSocialSubtab('x')" style="display:flex;align-items:center;gap:8px;padding:10px 22px;border-radius:8px;border:1px solid var(--border-color);font-weight:600;cursor:pointer;font-size:14px;background:var(--bg-secondary);color:var(--text-color);transition:all 0.2s;">
                         <i class="fa-brands fa-x-twitter" style="font-size:18px;"></i> X (Twitter) Session
+                    </button>
+                    <button class="social-subtab-btn" data-subtab="labs" onclick="switchSocialSubtab('labs')" style="display:flex;align-items:center;gap:8px;padding:10px 22px;border-radius:8px;border:1px solid var(--border-color);font-weight:600;cursor:pointer;font-size:14px;background:var(--bg-secondary);color:var(--text-color);transition:all 0.2s;">
+                        <i class="fa-brands fa-google" style="font-size:18px;color:#4285f4;"></i> Google Labs Session
                     </button>
                 </div>
 
@@ -611,6 +618,35 @@
                                 <button class="ant-btn ant-btn-danger btn-logout-social" data-platform="X">
                                     <i class="fa-solid fa-right-from-bracket"></i> Đăng Xuất
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub-tab 4: Google Labs -->
+                <div id="social-subtab-labs" class="social-subtab-content" style="display:none;">
+                    <div class="ant-card social-card" style="border-top:4px solid #4285f4;">
+                        <div class="social-card-header labs" style="display:flex;align-items:center;justify-content:space-between;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <i class="fa-brands fa-google" style="color:#4285f4;font-size:22px;"></i>
+                                <h3>Google Labs (labs.google) Session — Tạo Video Tự Động Qua Browser</h3>
+                            </div>
+                        </div>
+                        <div class="social-card-body">
+                            <p>Trạng thái Session: <span id="labs-google-status-tag" class="ant-tag"><i class="fa-solid fa-spinner fa-spin"></i> Đang kiểm tra...</span></p>
+
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button class="ant-btn ant-btn-primary" onclick="loginLabsGoogle()" style="background:#4285f4;border-color:#4285f4;">
+                                    <i class="fa-solid fa-arrow-right-to-bracket"></i> Mở Trình Duyệt Đăng Nhập Google Labs
+                                </button>
+                                <button class="ant-btn ant-btn-default" onclick="checkLabsGoogleStatus()">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Kiểm Tra Trạng Thái
+                                </button>
+                            </div>
+
+                            <div style="background:rgba(66,133,244,0.05);border:1px solid rgba(66,133,244,0.15);border-radius:10px;padding:14px;margin-top:16px;">
+                                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;font-weight:600;">Hướng dẫn:</div>
+                                <div style="font-size:12px;">Click nút trên để mở trình duyệt → Đăng nhập tài khoản Google của bạn trên <b>labs.google</b> → Đóng trình duyệt. Hệ thống sẽ tự động sử dụng session này để paste prompt, tạo video và tự động tải về thư viện!</div>
                             </div>
                         </div>
                     </div>
@@ -993,7 +1029,7 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2.7"></script>
 </body>
 
 </html>

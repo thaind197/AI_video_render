@@ -1010,6 +1010,7 @@ async function fetchSocialStatus() {
         updatePlatformStatusTag("fb-status-tag", data.facebook);
         updatePlatformStatusTag("tiktok-status-tag", data.tiktok);
         updatePlatformStatusTag("x-status-tag", data.x);
+        updatePlatformStatusTag("labs-google-status-tag", data.labs_google);
     } catch (err) {
         console.warn("Lỗi kiểm tra trạng thái social:", err);
     }
@@ -1882,7 +1883,7 @@ function switchSocialSubtab(platform) {
         const p = btn.getAttribute("data-subtab");
         if (p === platform) {
             btn.classList.add("active");
-            btn.style.background = p === 'fb' ? '#1877f2' : p === 'tiktok' ? '#fe2c55' : '#14171a';
+            btn.style.background = p === 'fb' ? '#1877f2' : p === 'tiktok' ? '#fe2c55' : p === 'labs' ? '#4285f4' : '#14171a';
             btn.style.color = '#fff';
             btn.style.borderColor = 'transparent';
         } else {
@@ -1900,6 +1901,57 @@ function switchSocialSubtab(platform) {
 
     if (platform === 'fb') loadFbProfiles();
     if (platform === 'tiktok') loadTikTokProfiles();
+    if (platform === 'labs') checkLabsGoogleStatus();
+}
+
+async function checkLabsGoogleStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/api/labs-google/status`);
+        const data = await res.json();
+        updatePlatformStatusTag("labs-google-status-tag", data.logged_in);
+    } catch (err) {
+        console.warn("Lỗi kiểm tra Labs Google status:", err);
+    }
+}
+
+async function loginLabsGoogle() {
+    showToast("Đang mở trình duyệt đăng nhập Google Labs...", "info");
+    try {
+        const res = await fetch(`${API_BASE}/api/labs-google/login`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+            showToast("Trình duyệt đăng nhập đã mở! Vui lòng đăng nhập tài khoản Google trên labs.google.", "info");
+            setTimeout(checkLabsGoogleStatus, 5000);
+        } else {
+            showToast(data.detail || "Lỗi mở trình duyệt", "error");
+        }
+    } catch (err) {
+        showToast(`Lỗi: ${err.message}`, "error");
+    }
+}
+
+async function generateViaLabsGoogle(promptText) {
+    if (!promptText || !promptText.trim()) {
+        showToast("Vui lòng nhập prompt trước khi tạo!", "error");
+        return;
+    }
+    showToast("Đang gửi yêu cầu tạo video qua Labs.google...", "info");
+    try {
+        const res = await fetch(`${API_BASE}/api/labs-google/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: promptText.trim() })
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast(`✅ ${data.message}`, "success");
+            fetchJobsAndStats();
+        } else {
+            showToast(data.detail || "Lỗi tạo video", "error");
+        }
+    } catch (err) {
+        showToast(`Lỗi: ${err.message}`, "error");
+    }
 }
 
 // Expose on window scope for inline HTML onclick attributes
@@ -1920,6 +1972,9 @@ window.closeFbProfileModal = closeFbProfileModal;
 window.closeTikTokProfileModal = closeTikTokProfileModal;
 window.executePostToProfiles = executePostToProfiles;
 window.executePostToTikTokProfiles = executePostToTikTokProfiles;
+window.checkLabsGoogleStatus = checkLabsGoogleStatus;
+window.loginLabsGoogle = loginLabsGoogle;
+window.generateViaLabsGoogle = generateViaLabsGoogle;
 
 // ── Auto-load profiles khi vào Social tab ───────────────────
 document.addEventListener("DOMContentLoaded", () => {
@@ -1929,11 +1984,13 @@ document.addEventListener("DOMContentLoaded", () => {
             setTimeout(() => {
                 loadFbProfiles();
                 loadTikTokProfiles();
+                checkLabsGoogleStatus();
             }, 100);
         });
     }
     if (document.querySelector('#tab-social.active')) {
         loadFbProfiles();
         loadTikTokProfiles();
+        checkLabsGoogleStatus();
     }
 });

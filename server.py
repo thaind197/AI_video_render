@@ -94,6 +94,10 @@ class SettingsUpdateRequest(BaseModel):
 class SocialLoginRequest(BaseModel):
     platform: str
 
+class LabsGoogleGenerateRequest(BaseModel):
+    prompt: str
+    title: str = ""
+
 class SocialLogoutRequest(BaseModel):
     platform: str
 
@@ -428,14 +432,43 @@ def get_social_status():
     fb_pub = FacebookPublisher()
     tt_pub = TikTokPublisher()
     x_pub = XPublisher()
+    from core.labs_google_generator import LabsGoogleGenerator
+    labs_gen = LabsGoogleGenerator()
     return {
         "status": "success",
         "data": {
             "facebook": fb_pub.is_logged_in(),
             "tiktok": tt_pub.is_logged_in(),
-            "x": x_pub.is_logged_in()
+            "x": x_pub.is_logged_in(),
+            "labs_google": labs_gen.is_logged_in()
         }
     }
+
+@app.get("/api/labs-google/status")
+def get_labs_google_status():
+    from core.labs_google_generator import LabsGoogleGenerator
+    gen = LabsGoogleGenerator()
+    return {"status": "success", "logged_in": gen.is_logged_in()}
+
+@app.post("/api/labs-google/login")
+def labs_google_login():
+    from core.labs_google_generator import LabsGoogleGenerator
+    gen = LabsGoogleGenerator()
+    t = threading.Thread(target=gen.login_manual, daemon=True, name="login_labs_google")
+    t.start()
+    return {"status": "success", "message": "Đã mở cửa sổ đăng nhập Labs.google"}
+
+@app.post("/api/labs-google/generate")
+def labs_google_generate(req: LabsGoogleGenerateRequest):
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt không được để trống")
+    job_id = db.create_job(
+        source_type="LABS_PROMPT",
+        source_input=req.prompt.strip(),
+        title=req.title.strip() or req.prompt.strip()[:50],
+        veo_prompt=req.prompt.strip()
+    )
+    return {"status": "success", "job_id": job_id, "message": f"Đã tạo Job #{job_id} cho Labs.google"}
 
 @app.post("/api/social/login")
 def social_login(req: SocialLoginRequest):
