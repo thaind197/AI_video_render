@@ -387,13 +387,35 @@
                                         style="width: 100%;">
                                 </div>
                             </div>
-                            <div style="display: flex; gap: 12px; margin-top: 25px; flex-wrap: wrap;">
+                            <div style="display: flex; gap: 12px; margin-top: 25px; flex-wrap: wrap; align-items: center;">
                                 <button type="submit" class="ant-btn ant-btn-primary ant-btn-lg">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i> Sinh Batch Video Kịch Bản (Gemini API)
                                 </button>
                                 <button type="button" class="ant-btn ant-btn-lg" style="background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; border: none; font-weight: 600;" onclick="generateViaLabsGoogle(document.getElementById('prompt-topic').value)">
                                     <i class="fa-brands fa-google"></i> Mở Labs.google & Tạo Video Từ Prompt
                                 </button>
+                                <div style="display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);">
+                                    <i class="fa-solid fa-sliders" style="color: #4285f4; font-size: 13px;"></i>
+                                    <label for="labs-quality-select" style="font-size: 13px; font-weight: 500; color: var(--text-secondary); white-space: nowrap;">Độ phân giải tải:</label>
+                                    <select id="labs-quality-select" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                        <option value="1080p" selected>1080p (Full HD)</option>
+                                        <option value="720p">720p (Gốc)</option>
+                                        <option value="4K">4K (Siêu nét - 50 credits)</option>
+                                        <option value="270p">270p (GIF)</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);">
+                                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500; user-select: none;">
+                                        <input type="checkbox" id="labs-subtitle-checkbox" checked style="cursor: pointer; transform: scale(1.15);">
+                                        <i class="fa-solid fa-closed-captioning" style="color: #fa8c16;"></i>
+                                        <span>FFmpeg Render Sub</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500; user-select: none;">
+                                        <input type="checkbox" id="labs-voiceover-checkbox" checked style="cursor: pointer; transform: scale(1.15);">
+                                        <i class="fa-solid fa-microphone" style="color: #52c41a;"></i>
+                                        <span>Giọng Đọc AI</span>
+                                    </label>
+                                </div>
                             </div>
                         </form>
                     </div>

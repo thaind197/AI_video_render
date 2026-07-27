@@ -111,7 +111,10 @@ class VideoProcessor:
                 f"crop={TARGET_WIDTH}:{TARGET_HEIGHT}"
             )
             if srt_path and Path(srt_path).exists():
-                srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
+                try:
+                    srt_escaped = os.path.relpath(Path(srt_path), Path.cwd()).replace("\\", "/").replace(":", "\\:")
+                except Exception:
+                    srt_escaped = str(Path(srt_path).resolve()).replace("\\", "/").replace(":", "\\:")
                 vf_filter = (
                     scale_crop +
                     f",subtitles='{srt_escaped}':force_style='FontName=Arial,FontSize=20,"
@@ -125,7 +128,6 @@ class VideoProcessor:
                 # Replace audio with TTS voiceover
                 cmd = [
                     self.ffmpeg_exe, "-y",
-                    "-stream_loop", "-1",
                     "-i", str(raw_video),
                     "-i", str(audio_mp3),
                     "-vf", vf_filter,

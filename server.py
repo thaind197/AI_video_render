@@ -97,6 +97,9 @@ class SocialLoginRequest(BaseModel):
 class LabsGoogleGenerateRequest(BaseModel):
     prompt: str
     title: str = ""
+    quality: str = "1080p"
+    add_subtitle: bool = True
+    add_voiceover: bool = True
 
 class SocialLogoutRequest(BaseModel):
     platform: str
@@ -444,6 +447,18 @@ def get_social_status():
         }
     }
 
+ACTIVE_LOGIN_THREADS = {}
+login_thread_lock = threading.Lock()
+
+def is_login_thread_active(key: str) -> bool:
+    with login_thread_lock:
+        t = ACTIVE_LOGIN_THREADS.get(key)
+        return t is not None and t.is_alive()
+
+def register_login_thread(key: str, thread: threading.Thread):
+    with login_thread_lock:
+        ACTIVE_LOGIN_THREADS[key] = thread
+
 @app.get("/api/labs-google/status")
 def get_labs_google_status():
     from core.labs_google_generator import LabsGoogleGenerator
@@ -452,9 +467,12 @@ def get_labs_google_status():
 
 @app.post("/api/labs-google/login")
 def labs_google_login():
+    if is_login_thread_active("labs_google"):
+        return {"status": "warning", "message": "Trình duyệt đăng nhập Labs.google đã mở sẵn trên thanh tác vụ!"}
     from core.labs_google_generator import LabsGoogleGenerator
     gen = LabsGoogleGenerator()
     t = threading.Thread(target=gen.login_manual, daemon=True, name="login_labs_google")
+    register_login_thread("labs_google", t)
     t.start()
     return {"status": "success", "message": "Đã mở cửa sổ đăng nhập Labs.google"}
 
@@ -462,18 +480,26 @@ def labs_google_login():
 def labs_google_generate(req: LabsGoogleGenerateRequest):
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt không được để trống")
+    quality = req.quality.strip() if req.quality else "1080p"
     job_id = db.create_job(
         source_type="LABS_PROMPT",
         source_input=req.prompt.strip(),
         title=req.title.strip() or req.prompt.strip()[:50],
-        veo_prompt=req.prompt.strip()
+        veo_prompt=req.prompt.strip(),
+        quality=quality,
+        add_subtitle=req.add_subtitle,
+        add_voiceover=req.add_voiceover
     )
-    return {"status": "success", "job_id": job_id, "message": f"Đã tạo Job #{job_id} cho Labs.google"}
+    sub_msg = " + Sub" if req.add_subtitle else ""
+    return {"status": "success", "job_id": job_id, "message": f"Đã tạo Job #{job_id} cho Labs.google ({quality}{sub_msg})"}
 
 @app.post("/api/social/login")
 def social_login(req: SocialLoginRequest):
     """Trigger browser window for manual user login to social network"""
     platform = req.platform.lower()
+    if is_login_thread_active(platform):
+        return {"status": "warning", "message": f"Trình duyệt đăng nhập {req.platform} đã được mở sẵn!"}
+
     if platform == "facebook":
         pub = FacebookPublisher()
         login_url = "https://www.facebook.com/"
@@ -488,6 +514,7 @@ def social_login(req: SocialLoginRequest):
 
     # Dùng Thread riêng để tránh xung đột asyncio + sync_playwright
     t = threading.Thread(target=pub.interactive_login, args=(login_url,), daemon=True, name=f"login_{platform}")
+    register_login_thread(platform, t)
     t.start()
     return {"status": "success", "message": f"Đã kích hoạt cửa sổ đăng nhập {req.platform}"}
 

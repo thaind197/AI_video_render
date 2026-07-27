@@ -15,8 +15,10 @@ from core.labs_google_generator import LabsGoogleGenerator
 from publishers.facebook_publisher import FacebookPublisher
 from publishers.tiktok_publisher import TikTokPublisher
 from publishers.x_publisher import XPublisher
-
+import threading
 logger = logging.getLogger(__name__)
+
+labs_browser_lock = threading.Lock()
 
 class MultiThreadQueueManager:
     """Orchestrates multi-threaded processing pipeline for 100 videos/day target"""
@@ -202,7 +204,7 @@ class MultiThreadQueueManager:
             self.db.update_job(job_id, status=JobStatus.READY_TO_POST.value)
 
     def process_labs_google_job(self, job_id: int):
-        """Worker function: Process job using labs.google browser automation"""
+        """Worker function: Process job using labs.google browser automation with session lock"""
         job = self.db.get_job(job_id)
         if not job or job['status'] not in (JobStatus.SCRIPTED.value, JobStatus.PENDING.value):
             return
@@ -213,7 +215,10 @@ class MultiThreadQueueManager:
             out_raw_path = GENERATED_DIR / f"raw_{job_id}.mp4"
 
             prompt = job.get('veo_prompt') or job.get('source_input') or job.get('title')
-            ok = self.labs_gen.generate_video(prompt=prompt, out_path=out_raw_path)
+            quality = job.get('quality') or job.get('labs_quality') or '1080p'
+            
+            with labs_browser_lock:
+                ok = self.labs_gen.generate_video(prompt=prompt, out_path=out_raw_path, quality=quality)
 
             if ok and out_raw_path.exists():
                 self.db.update_job(

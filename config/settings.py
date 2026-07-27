@@ -31,6 +31,9 @@ DEFAULT_VIDEO_DURATION_SEC = 10
 DEFAULT_VEO_MODEL = os.getenv("DEFAULT_VEO_MODEL", "veo-3.1-lite-generate-preview")
 DEFAULT_IMAGE_MODEL = os.getenv("DEFAULT_IMAGE_MODEL", "imagen-3.0-generate-002")
 DEFAULT_ASPECT_RATIO = os.getenv("DEFAULT_ASPECT_RATIO", "9:16")
+DEFAULT_LABS_QUALITY = os.getenv("DEFAULT_LABS_QUALITY", "1080p")
+DEFAULT_ADD_SUBTITLE = os.getenv("DEFAULT_ADD_SUBTITLE", "true").lower() == "true"
+DEFAULT_ADD_VOICEOVER = os.getenv("DEFAULT_ADD_VOICEOVER", "true").lower() == "true"
 REQUIRE_CONFIRMATION = os.getenv("REQUIRE_CONFIRMATION", "false").lower() == "true"
 
 # Veo generation options (matching Labs.google UI)

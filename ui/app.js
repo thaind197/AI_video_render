@@ -1915,32 +1915,61 @@ async function checkLabsGoogleStatus() {
 }
 
 async function loginLabsGoogle() {
+    const btn = document.querySelector("#social-subtab-labs button.ant-btn-primary");
+    if (btn && btn.disabled) return;
+    const oldHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang mở...';
+    }
     showToast("Đang mở trình duyệt đăng nhập Google Labs...", "info");
     try {
         const res = await fetch(`${API_BASE}/api/labs-google/login`, { method: "POST" });
         const data = await res.json();
         if (res.ok) {
-            showToast("Trình duyệt đăng nhập đã mở! Vui lòng đăng nhập tài khoản Google trên labs.google.", "info");
+            if (data.status === "warning") {
+                showToast(data.message, "warning");
+            } else {
+                showToast("Trình duyệt đăng nhập đã mở! Vui lòng đăng nhập tài khoản Google trên labs.google.", "info");
+            }
             setTimeout(checkLabsGoogleStatus, 5000);
         } else {
             showToast(data.detail || "Lỗi mở trình duyệt", "error");
         }
     } catch (err) {
         showToast(`Lỗi: ${err.message}`, "error");
+    } finally {
+        setTimeout(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = oldHtml || '<i class="fa-solid fa-arrow-right-to-bracket"></i> Mở Trình Duyệt Đăng Nhập Google Labs';
+            }
+        }, 3000);
     }
 }
 
-async function generateViaLabsGoogle(promptText) {
+async function generateViaLabsGoogle(promptText, quality) {
     if (!promptText || !promptText.trim()) {
         showToast("Vui lòng nhập prompt trước khi tạo!", "error");
         return;
     }
-    showToast("Đang gửi yêu cầu tạo video qua Labs.google...", "info");
+    const qualityVal = quality || (document.getElementById("labs-quality-select") ? document.getElementById("labs-quality-select").value : "1080p");
+    const subCb = document.getElementById("labs-subtitle-checkbox");
+    const addSub = subCb ? subCb.checked : true;
+    const voiceCb = document.getElementById("labs-voiceover-checkbox");
+    const addVoice = voiceCb ? voiceCb.checked : true;
+
+    showToast(`Đang gửi yêu cầu tạo video qua Labs.google (${qualityVal}${addSub ? ' + Sub' : ''})...`, "info");
     try {
         const res = await fetch(`${API_BASE}/api/labs-google/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: promptText.trim() })
+            body: JSON.stringify({
+                prompt: promptText.trim(),
+                quality: qualityVal,
+                add_subtitle: addSub,
+                add_voiceover: addVoice
+            })
         });
         const data = await res.json();
         if (res.ok) {

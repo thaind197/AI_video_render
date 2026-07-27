@@ -1,7 +1,8 @@
 """
-Helper: Mở Chrome hệ thống (hoặc Edge) trực tiếp bằng Python subprocess với cờ buộc hiển thị (STARTUPINFO & SHOWWINDOW)
-Kết hợp Win32 user32.dll API để khôi phục cửa sổ nếu bị ẩn (SW_SHOW) hoặc bị nháy ẩn/định vị ngoài rìa màn hình (-32000),
-ép nổi lên mặt trên cùng của màn hình máy tính (Foreground Window).
+Helper: Mở Chrome / Edge cho người dùng đăng nhập thủ công
+Chạy như 1 tiến trình Python riêng biệt.
+Mở đúng 1 cửa sổ trình duyệt Chrome/Edge duy nhất với session_dir chỉ định.
+Theo dõi chính xác tiến trình Chrome thông qua commandline session_dir.
 
 Usage:
     python _login_browser.py <session_dir> <login_url>
@@ -34,66 +35,38 @@ def find_browser():
     return None
 
 
-def is_browser_running(proc: subprocess.Popen, session_dir_str: str) -> bool:
-    """Kiểm tra chính xác xem trình duyệt cho session_dir có đang chạy không."""
-    # 1. Kiểm tra trực tiếp tiến trình chính (proc) mà Python đã mở
-    if proc and proc.poll() is None:
-        return True
-
-    # 2. Nếu proc chính thoái ra do ủy quyền sub-process, kiểm tra bằng commandline trong hệ thống
-    norm_dir = session_dir_str.lower().replace("/", "\\")
-    try:
-        res = subprocess.run(
-            ["cmd.exe", "/c", 'wmic process where "name=\'chrome.exe\' or name=\'msedge.exe\'" get commandline'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if norm_dir in res.stdout.lower():
-            return True
-    except Exception as e:
-        print(f"[LoginBrowser] WMIC Check Error: {e}", flush=True)
-
-    try:
-        # Fallback Powershell check
-        cmd = [
-            "powershell", "-NoProfile", "-Command",
-            f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Measure-Object | Select-Object -ExpandProperty Count"
-        ]
-        res_ps = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-        count = int(res_ps.stdout.strip())
-        if count > 0:
-            return True
-    except Exception:
-        pass
-
-    return False
-
-
 def kill_orphan_process(session_dir_str: str):
     """Kill bất kỳ tiến trình chrome/edge ngầm nào đang giữ session_dir"""
     norm_dir = session_dir_str.lower().replace("/", "\\")
     try:
-        res = subprocess.run(
-            ["cmd.exe", "/c", 'wmic process where "name=\'chrome.exe\' or name=\'msedge.exe\'" get commandline,processid'],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        lines = res.stdout.splitlines()
-        for line in lines:
-            if norm_dir in line.lower():
-                parts = line.strip().split()
-                if parts and parts[-1].isdigit():
-                    pid = parts[-1]
-                    print(f"[LoginBrowser] Kill tiến trình ngầm mồ côi PID={pid}", flush=True)
-                    subprocess.run(["taskkill", "/F", "/PID", pid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cmd = [
+            "powershell", "-NoProfile", "-Command",
+            f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Stop-Process -Force"
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
     except Exception as e:
         print(f"[LoginBrowser] Warning cleanup orphan: {e}", flush=True)
 
 
-def force_unhide_and_top(target_pid: int = 0):
-    """Tìm cửa sổ của Chrome/Edge và BUỘC hiển thị trên màn hình chính, đặt lại tọa độ nếu bị đẩy ra ngoài viền màn hình."""
+def is_browser_running(session_dir_str: str) -> bool:
+    """Kiểm tra chính xác xem còn tiến trình Chrome/Edge nào đang giữ session_dir này hay không."""
+    norm_dir = session_dir_str.lower().replace("/", "\\")
+    try:
+        cmd = [
+            "powershell", "-NoProfile", "-Command",
+            f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Measure-Object | Select-Object -ExpandProperty Count"
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        count_str = res.stdout.strip()
+        if count_str.isdigit() and int(count_str) > 0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def bring_to_front_once(target_pid: int):
+    """Gọi nhẹ 1 lần duy nhất để đưa cửa sổ Chrome mới mở lên trên cùng màn hình."""
     try:
         user32 = ctypes.windll.user32
         WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
@@ -101,32 +74,14 @@ def force_unhide_and_top(target_pid: int = 0):
         def callback(hwnd, extra):
             pid = ctypes.c_ulong()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-
-            cls_buff = ctypes.create_unicode_buffer(256)
-            user32.GetClassNameW(hwnd, cls_buff, 256)
-            cls_name = cls_buff.value
-
-            # Nếu cửa sổ thuộc PID ta vừa chạy, hoặc có class là Chrome_WidgetWin_1 / Chrome_WidgetWin_0 / Edge
-            if cls_name in ['Chrome_WidgetWin_1', 'Chrome_WidgetWin_0', 'Edge_WidgetWin_1'] or (target_pid > 0 and pid.value == target_pid):
-                # KHÔNG BỎ QUA NGAY CẢ KHI BỊ ẨN: Gọi SW_SHOW (5) và SW_RESTORE (9) để buộc hiện ra
-                user32.ShowWindow(hwnd, 5)  # SW_SHOW (bật hiển thị nếu bị gán cờ SW_HIDE)
-                user32.ShowWindow(hwnd, 9)  # SW_RESTORE (khôi phục nếu bị minimize)
-
-                # Kiểm tra tọa độ cửa sổ: nếu bị Playwright gán cờ ẩn (-32000,-32000), lập tức đưa về chính giữa màn hình
-                rect = (ctypes.c_int * 4)()
-                user32.GetWindowRect(hwnd, ctypes.byref(rect))
-                left, top = rect[0], rect[1]
-                if left < -100 or top < -100:
-                    print(f"[LoginBrowser] Phát hiện cửa sổ bị giấu off-screen (left={left}, top={top}), đang kéo lại màn hình...", flush=True)
-                    user32.SetWindowPos(hwnd, 0, 50, 50, 1280, 800, 0x0040)  # SWP_SHOWWINDOW
-
-                user32.ShowWindow(hwnd, 3)  # SW_SHOWMAXIMIZED (Maximized toàn màn hình)
-                user32.SetForegroundWindow(hwnd)  # Ép lên top desktop
+            if pid.value == target_pid:
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
             return True
 
         user32.EnumWindows(WNDENUMPROC(callback), 0)
-    except Exception as e:
-        print(f"[LoginBrowser] Error force unhide: {e}", flush=True)
+    except Exception:
+        pass
 
 
 def main():
@@ -160,50 +115,41 @@ def main():
 
     print(f"[LoginBrowser] Browser EXE: {browser_exe}", flush=True)
 
-    # 4. Cấu hình cờ STARTUPINFO để đảm bảo Windows Kernel mở GUI hiển thị Maximized (chống kế thừa cờ ẩn)
-    startupinfo = None
-    creation_flags = 0
-    if sys.platform == 'win32':
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = 3  # SW_SHOWMAXIMIZED (hoặc 1 SW_SHOWNORMAL)
-        # Bứt phá khỏi luồng parent ẩn (như background runner hoặc job ẩn)
-        creation_flags = 0x00000010 | 0x00000200  # CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP
-
-    # Tham số mở trình duyệt: đè lại mọi tọa độ off-screen (-32000,-32000) từng bị lưu trước đó
+    # 4. Mở trình duyệt Chrome/Edge trực tiếp
     cmd_args = [
         browser_exe,
         f'--user-data-dir={session_dir}',
         '--no-first-run',
         '--no-default-browser-check',
-        '--new-window',
-        '--window-position=50,50',
-        '--window-size=1280,800',
+        '--disable-blink-features=AutomationControlled',
         '--start-maximized',
         login_url
     ]
 
-    print(f"[LoginBrowser] Khởi chạy trình duyệt trực tiếp với subprocess.Popen: {' '.join(cmd_args[:3])} ...", flush=True)
-    proc = subprocess.Popen(cmd_args, startupinfo=startupinfo, creationflags=creation_flags)
-    print(f"[LoginBrowser] Tiến trình trình duyệt đã mở! PID = {proc.pid}", flush=True)
+    print(f"[LoginBrowser] Khởi chạy trình duyệt: {' '.join(cmd_args[:3])} ...", flush=True)
+    creation_flags = 0
+    if sys.platform == "win32":
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
-    # Đợi 1.5s - 3s - 5s để ép cửa sổ hiển thị lên mặt trước màn hình và tháo gỡ cờ ẩn
-    for delay in [1.5, 1.5, 2.0]:
-        time.sleep(delay)
-        force_unhide_and_top(proc.pid)
+    proc = subprocess.Popen(cmd_args, creationflags=creation_flags)
+    print(f"[LoginBrowser] Tiến trình khởi tạo PID = {proc.pid}", flush=True)
 
-    # 5. Theo dõi cho đến khi người dùng thực sự đóng cửa sổ trình duyệt
+    # Đợi 3 giây cho Chrome khởi tạo đầy đủ các tiến trình con
+    time.sleep(3.0)
+    bring_to_front_once(proc.pid)
+
+    # 5. Theo dõi cho đến khi người dùng đóng tất cả cửa sổ trình duyệt của session này
+    print("[LoginBrowser] Đang theo dõi cửa sổ trình duyệt... Vui lòng đăng nhập và đóng trình duyệt khi hoàn tất.", flush=True)
     max_wait = 600
-    elapsed = 5
-    print("[LoginBrowser] Monitoring browser window... Please log in and close browser when done.", flush=True)
+    elapsed = 3.0
     while elapsed < max_wait:
-        time.sleep(3)
-        elapsed += 3
-        if not is_browser_running(proc, session_dir):
-            print("[LoginBrowser] Detected browser window closed by user.", flush=True)
+        time.sleep(2)
+        elapsed += 2
+        if not is_browser_running(session_dir):
+            print("[LoginBrowser] Đã phát hiện người dùng đóng trình duyệt.", flush=True)
             break
 
-    print("[LoginBrowser] Completed. Session data saved!", flush=True)
+    print("[LoginBrowser] Hoàn tất. Phiên đăng nhập đã được lưu!", flush=True)
 
 
 if __name__ == "__main__":

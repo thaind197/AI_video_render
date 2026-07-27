@@ -74,6 +74,8 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN add_voiceover INTEGER DEFAULT 1")
             if 'add_subtitle' not in cols:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN add_subtitle INTEGER DEFAULT 1")
+            if 'quality' not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN quality TEXT DEFAULT '1080p'")
             conn.commit()
 
             # fb_post_logs: track per-profile posting per job
@@ -104,7 +106,7 @@ class DatabaseManager:
             conn.commit()
             conn.commit()
 
-    def create_job(self, source_type: str, source_input: str, title: str = "", voiceover_text: str = "", veo_prompt: str = "", tags: list = None, voice: str = "vi-VN-HoaiMyNeural", style: str = "cinematic", add_voiceover: bool = True, add_subtitle: bool = True) -> int:
+    def create_job(self, source_type: str, source_input: str, title: str = "", voiceover_text: str = "", veo_prompt: str = "", tags: list = None, voice: str = "vi-VN-HoaiMyNeural", style: str = "cinematic", add_voiceover: bool = True, add_subtitle: bool = True, quality: str = "1080p") -> int:
         now = datetime.now().isoformat()
         tags_str = json.dumps(tags or [], ensure_ascii=False)
         status = JobStatus.SCRIPTED.value if veo_prompt else JobStatus.PENDING.value
@@ -112,9 +114,9 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO jobs (source_type, source_input, title, voiceover_text, veo_prompt, tags, voice, style, add_voiceover, add_subtitle, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (source_type, source_input, title, voiceover_text, veo_prompt, tags_str, voice, style, int(add_voiceover), int(add_subtitle), status, now, now))
+            INSERT INTO jobs (source_type, source_input, title, voiceover_text, veo_prompt, tags, voice, style, add_voiceover, add_subtitle, quality, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (source_type, source_input, title, voiceover_text, veo_prompt, tags_str, voice, style, int(add_voiceover), int(add_subtitle), quality, status, now, now))
             conn.commit()
             return cursor.lastrowid
 

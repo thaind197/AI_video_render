@@ -35,12 +35,13 @@ class LabsGoogleGenerator(BasePublisher):
             return True
         return super().is_logged_in()
 
-    def generate_video(self, prompt: str, out_path: Path, timeout_sec: int = 600) -> bool:
+    def generate_video(self, prompt: str, out_path: Path, quality: str = "1080p", timeout_sec: int = 600) -> bool:
         """Automate labs.google to paste prompt, generate video, and download .mp4 output file.
 
         Args:
             prompt: Text description of video to render
             out_path: Path where output mp4 video should be saved
+            quality: Video quality option ('1080p', '720p', '4K', '270p')
             timeout_sec: Maximum time to wait for rendering in seconds
 
         Returns:
@@ -58,8 +59,10 @@ class LabsGoogleGenerator(BasePublisher):
             with sync_playwright() as p:
                 # hidden=False: Hiển thị màn hình trình duyệt trực quan cho người dùng thấy
                 context = self.get_browser_context(p, headless=False, hidden=False)
+                context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
                 page = context.new_page()
                 page.set_default_timeout(60000)
+                time.sleep(3.0)  # Đợi 3s ngay khi mở trình duyệt theo yêu cầu
 
                 # Step 1: Navigate to Labs Google VideoFX
                 logger.info(f"[LabsGoogle] Điều hướng tới {LABS_GOOGLE_URL}...")
@@ -75,11 +78,26 @@ class LabsGoogleGenerator(BasePublisher):
 
                 self._screenshot(page, "labs_01_landed")
 
-                # Step 1.5: If landing page has a 'Create with Google Flow' / 'Get Started' button, click it to enter tool workspace
+                # Step 1.5: If page requires clicking 'Dự án mới' / 'New project' / 'Create', click to open project workspace
                 launch_selectors = [
+                    "button:has-text('Dự án mới')",
+                    "button:has-text('New project')",
+                    "button:has-text('New Project')",
+                    "button:has-text('Create project')",
+                    "button:has-text('Create Project')",
+                    "button:has-text('Tạo dự án')",
+                    "button:has-text('New flow')",
+                    "button:has-text('Tạo mới')",
+                    "button:has-text('New')",
                     "button:has-text('Create with Google Flow')",
+                    "a:has-text('Dự án mới')",
+                    "a:has-text('New project')",
                     "a:has-text('Create with Google Flow')",
-                    "button:has-text('Create')",
+                    "a:has-text('Create')",
+                    "[aria-label*='Dự án mới' i]",
+                    "[aria-label*='New project' i]",
+                    "[aria-label*='Create' i]",
+                    "[aria-label*='Tạo' i]",
                     "button:has-text('Get Started')",
                     "button:has-text('Try VideoFX')",
                     "button:has-text('Launch')",
@@ -88,8 +106,8 @@ class LabsGoogleGenerator(BasePublisher):
                 for l_sel in launch_selectors:
                     try:
                         btn = page.locator(l_sel).first
-                        if btn.is_visible(timeout=3000):
-                            logger.info(f"[LabsGoogle] Bấm nút vào công cụ: {l_sel}")
+                        if btn.is_visible(timeout=2500):
+                            logger.info(f"[LabsGoogle] Bấm nút vào Dự Án Mới / Công Cụ: {l_sel}")
                             btn.click()
                             time.sleep(4)
                             self._screenshot(page, "labs_01b_workspace_opened")
@@ -110,28 +128,51 @@ class LabsGoogleGenerator(BasePublisher):
                     "textarea[placeholder*='mô tả' i]",
                     "textarea[placeholder*='Create' i]",
                     "textarea[placeholder*='Describe' i]",
+                    "textarea[placeholder*='Flow' i]",
+                    "textarea[placeholder*='video' i]",
                     "textarea:visible:not([name*='recaptcha'])",
-                    "div[contenteditable='true']:visible",
-                    "input[type='text']:visible",
+                    "[contenteditable='true']",
+                    "[contenteditable]",
+                    "div[role='textbox']",
+                    "span[role='textbox']",
                     "[aria-label*='prompt' i]",
+                    "[aria-label*='Describe' i]",
+                    "[aria-label*='Create' i]",
+                    "[aria-label*='mô tả' i]",
+                    "[placeholder*='prompt' i]",
                     "[placeholder*='Create' i]",
-                    "[placeholder*='Describe' i]"
+                    "[placeholder*='Describe' i]",
+                    "[placeholder*='video' i]",
+                    "[data-placeholder]",
+                    ".ProseMirror",
+                    "input[type='text']:visible"
                 ]
 
                 for sel in input_selectors:
                     try:
                         locator = page.locator(sel)
-                        for idx in range(locator.count()):
+                        count = locator.count()
+                        for idx in range(count):
                             candidate = locator.nth(idx)
                             name_attr = candidate.get_attribute("name") or ""
                             if "recaptcha" in name_attr.lower():
                                 continue
-                            if candidate.is_visible(timeout=2000):
+                            if candidate.is_visible(timeout=1500):
                                 prompt_input = candidate
                                 logger.info(f"[LabsGoogle] Đã tìm thấy ô nhập prompt ({sel} #{idx})")
                                 break
                         if prompt_input:
                             break
+                    except Exception:
+                        pass
+
+                # Fallback: Thử tìm trong main container
+                if not prompt_input:
+                    try:
+                        body_inputs = page.locator("main textarea, main [contenteditable='true'], main div[role='textbox']")
+                        if body_inputs.count() > 0:
+                            prompt_input = body_inputs.first
+                            logger.info("[LabsGoogle] Đã tìm thấy ô nhập prompt qua fallback main container")
                     except Exception:
                         pass
 
@@ -142,95 +183,183 @@ class LabsGoogleGenerator(BasePublisher):
                     return False
 
                 # Step 3: Enter prompt
-                prompt_input.click()
-                time.sleep(1)
-                prompt_input.fill(prompt)
-                time.sleep(2)
+                try:
+                    prompt_input.click()
+                except Exception:
+                    pass
+                time.sleep(0.5)
+
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace")
+                time.sleep(0.5)
+
+                try:
+                    prompt_input.fill(prompt)
+                except Exception:
+                    page.keyboard.insert_text(prompt)
+
+                time.sleep(1.5)
                 logger.info(f"[LabsGoogle] Đã nhập prompt thành công: '{prompt[:50]}...'")
                 self._screenshot(page, "labs_02_prompt_entered")
 
-                # Step 4: Click Generate button
-                gen_button = None
-                btn_selectors = [
-                    "button:has-text('Generate')",
-                    "button:has-text('Tạo')",
-                    "button:has-text('Create')",
-                    "button:has-text('Submit')",
-                    "button[type='submit']",
-                    "[aria-label*='Generate' i]",
-                    "[aria-label*='Tạo' i]"
-                ]
+                # Step 4: Submit prompt by pressing Enter
+                logger.info("[LabsGoogle] Nhấn phím Enter để gửi prompt...")
+                page.keyboard.press("Enter")
+                time.sleep(1.0)
+                page.keyboard.press("Enter")
 
-                for sel in btn_selectors:
-                    try:
-                        btn = page.locator(sel).first
-                        if btn.is_visible(timeout=3000):
-                            gen_button = btn
-                            logger.info(f"[LabsGoogle] Đã tìm thấy nút Generate: {sel}")
-                            break
-                    except Exception:
-                        pass
-
-                if not gen_button:
-                    # Press Enter as fallback
-                    logger.info("[LabsGoogle] Thử nhấn Enter để submit prompt...")
-                    prompt_input.press("Enter")
-                else:
-                    gen_button.click()
-
-                logger.info("[LabsGoogle] Đã gửi yêu cầu sinh video. Đang chờ render hoàn tất...")
+                logger.info("[LabsGoogle] Đã gửi yêu cầu sinh video. Đang chờ 50 giây cho Google Labs render hoàn tất...")
                 self._screenshot(page, "labs_03_generating")
+                time.sleep(50)
 
-                # Step 5: Wait for generated video / download link
+                # Step 5: Wait for generated video & download via 3-dots menu -> Tải xuống -> 1080p
                 start_time = time.time()
                 video_downloaded = False
 
-                # Listen for download event or video element / link
                 download_info = []
 
                 def handle_download(download):
                     try:
-                        dl_path = out_path
-                        download.save_as(str(dl_path))
-                        download_info.append(dl_path)
-                        logger.info(f"[LabsGoogle] ✅ Đã tải video qua sự kiện browser download: {dl_path.name}")
+                        download.save_as(str(out_path))
+                        download_info.append(out_path)
+                        logger.info(f"[LabsGoogle] ✅ Đã lưu video tải về: {out_path.name}")
                     except Exception as ex:
                         logger.warning(f"[LabsGoogle] Lỗi lưu browser download: {ex}")
 
                 page.on("download", handle_download)
 
                 while time.time() - start_time < timeout_sec:
-                    # Check if browser download event fired
+                    # 1. Kiểm tra sự kiện download tự động đã bắn ra hay chưa
                     if download_info and out_path.exists() and out_path.stat().st_size > 100000:
                         video_downloaded = True
                         break
 
-                    # Check for video element with src blob/http
                     try:
-                        video_elems = page.locator("video")
-                        count = video_elems.count()
-                        for i in range(count):
-                            v_src = video_elems.nth(i).get_attribute("src") or ""
-                            if v_src and ("http" in v_src or "blob" in v_src):
-                                # Look for download button nearby or click download menu
-                                dl_btns = page.locator("button:has-text('Download'), a[download], [aria-label*='Download' i], [title*='Download' i]")
-                                if dl_btns.count() > 0:
-                                    for d_idx in range(dl_btns.count()):
+                        # 1. Tìm khung chứa video card mới nhất trên màn hình
+                        video_cards = page.locator("div:has(video)")
+                        if video_cards.count() == 0:
+                            video_cards = page.locator("video")
+
+                        if video_cards.count() > 0:
+                            # Lấy video card mới nhất (hoặc đầu tiên)
+                            card = video_cards.last
+                            try:
+                                card.scroll_into_view_if_needed()
+                                card.hover()
+                                time.sleep(1.0)
+                                logger.info("[LabsGoogle] Đã rê chuột vào khung video card vừa tạo")
+                            except Exception:
+                                pass
+
+                            # 2. Tìm nút 3 chấm [⋮] NẰM TRONG KHUNG VIDEO CARD này
+                            three_dots_btn = None
+                            cand_btns = card.locator("button")
+                            count_b = cand_btns.count()
+
+                            for b_idx in range(count_b):
+                                b_elem = cand_btns.nth(b_idx)
+                                b_aria = (b_elem.get_attribute("aria-label") or "").lower()
+                                b_text = (b_elem.text_content() or "").lower()
+                                if "khác" in b_aria or "more" in b_aria or "more_vert" in b_text or "..." in b_text or "⋮" in b_text:
+                                    three_dots_btn = b_elem
+                                    logger.info(f"[LabsGoogle] Đã tìm thấy nút 3 chấm qua text/aria: {b_aria or b_text}")
+                                    break
+
+                            # Nếu không tìm được theo text, lấy nút thứ 3 trong thanh điều khiển góc trên video card
+                            if not three_dots_btn and count_b >= 3:
+                                three_dots_btn = cand_btns.nth(2)
+                                logger.info("[LabsGoogle] Chọn nút thứ 3 trong thanh điều khiển video làm nút 3 chấm [⋮]")
+                            elif not three_dots_btn and count_b > 0:
+                                three_dots_btn = cand_btns.last
+
+                            if three_dots_btn:
+                                logger.info("[LabsGoogle] Click nút 3 chấm [⋮] trên video card...")
+                                try:
+                                    three_dots_btn.hover()
+                                    time.sleep(0.5)
+                                    three_dots_btn.click(force=True)
+                                    time.sleep(1.5)
+                                    self._screenshot(page, "labs_03b_3dots_menu_opened")
+                                except Exception as ex_c:
+                                    logger.warning(f"[LabsGoogle] Lỗi click nút 3 chấm: {ex_c}")
+
+                                # 3. Tìm DOM element 'Tải xuống' bằng get_by_text, get_by_role & role=menuitem
+                                dl_menu_item = None
+                                try:
+                                    cand1 = page.get_by_text("Tải xuống", exact=False)
+                                    if cand1.count() > 0 and cand1.first.is_visible(timeout=1500):
+                                        dl_menu_item = cand1.first
+                                    else:
+                                        cand2 = page.get_by_role("menuitem").filter(has_text="Tải xuống")
+                                        if cand2.count() > 0 and cand2.first.is_visible(timeout=1500):
+                                            dl_menu_item = cand2.first
+                                        else:
+                                            cand3 = page.locator("[role='menuitem']:has-text('Tải xuống'), li:has-text('Tải xuống'), div:has-text('Tải xuống'), span:has-text('Tải xuống')")
+                                            if cand3.count() > 0 and cand3.first.is_visible(timeout=1500):
+                                                dl_menu_item = cand3.first
+                                except Exception as ex_dl_find:
+                                    logger.warning(f"[LabsGoogle] Lỗi tìm DOM element Tải xuống: {ex_dl_find}")
+
+                                if dl_menu_item:
+                                    logger.info("[LabsGoogle] Đã tìm thấy DOM element 'Tải xuống', rê chuột & click mở sub-menu...")
+                                    try:
+                                        dl_menu_item.scroll_into_view_if_needed()
+                                        dl_menu_item.hover()
+                                        time.sleep(0.8)
+                                        dl_menu_item.click(force=True)
+                                        time.sleep(1.2)
+                                        self._screenshot(page, "labs_03c_download_sub_menu")
+                                    except Exception as ex_h:
+                                        logger.warning(f"[LabsGoogle] Lỗi hover/click Tải xuống: {ex_h}")
+
+                                    # 4. Tìm DOM element chất lượng video mong muốn trong sub-menu vừa mở
+                                    target_q = (quality or "1080p").strip()
+                                    opt_quality = None
+                                    try:
+                                        cand_q1 = page.get_by_text(target_q, exact=False)
+                                        if cand_q1.count() > 0 and cand_q1.first.is_visible(timeout=1500):
+                                            opt_quality = cand_q1.first
+                                        else:
+                                            cand_q2 = page.get_by_role("menuitem").filter(has_text=target_q)
+                                            if cand_q2.count() > 0 and cand_q2.first.is_visible(timeout=1500):
+                                                opt_quality = cand_q2.first
+                                            else:
+                                                cand_q3 = page.locator(f"[role='menuitem']:has-text('{target_q}'), li:has-text('{target_q}'), div:has-text('{target_q}'), span:has-text('{target_q}')")
+                                                if cand_q3.count() > 0 and cand_q3.first.is_visible(timeout=1500):
+                                                    opt_quality = cand_q3.first
+                                    except Exception:
+                                        pass
+
+                                    if opt_quality:
+                                        logger.info(f"[LabsGoogle] Đã tìm thấy tùy chọn chất lượng '{target_q}', click để tải video...")
                                         try:
-                                            b = dl_btns.nth(d_idx)
-                                            if b.is_visible(timeout=1000):
-                                                with page.expect_download(timeout=10000) as download_info_ctx:
-                                                    b.click()
+                                            with page.expect_download(timeout=25000) as download_info_ctx:
+                                                opt_quality.click(force=True)
+                                            dl = download_info_ctx.value
+                                            dl.save_as(str(out_path))
+                                            logger.info(f"[LabsGoogle] ✅ Tải video chất lượng {target_q} thành công về: {out_path.name}")
+                                            video_downloaded = True
+                                            break
+                                        except Exception as ex_dl_q:
+                                            logger.warning(f"[LabsGoogle] Lỗi chờ file download {target_q}: {ex_dl_q}")
+                                    else:
+                                        # Fallback chọn 1080p -> 720p nếu chất lượng mong muốn không thấy
+                                        logger.warning(f"[LabsGoogle] Không thấy tùy chọn {target_q}, thử chọn fallback 1080p / 720p...")
+                                        try:
+                                            opt_fb = page.get_by_text("1080p", exact=False).first
+                                            if not opt_fb.is_visible(timeout=1000):
+                                                opt_fb = page.get_by_text("720p", exact=False).first
+                                            if opt_fb.is_visible(timeout=1000):
+                                                with page.expect_download(timeout=20000) as download_info_ctx:
+                                                    opt_fb.click(force=True)
                                                 dl = download_info_ctx.value
                                                 dl.save_as(str(out_path))
-                                                logger.info(f"[LabsGoogle] ✅ Đã tải video thành công qua nút Download!")
+                                                logger.info(f"[LabsGoogle] ✅ Tải video fallback thành công!")
                                                 video_downloaded = True
                                                 break
                                         except Exception:
                                             pass
-                                if video_downloaded:
-                                    break
-                    except Exception:
+                    except Exception as ex_loop:
                         pass
 
                     if video_downloaded:
@@ -239,7 +368,7 @@ class LabsGoogleGenerator(BasePublisher):
                     time.sleep(5)
 
                 if not video_downloaded:
-                    # Check if any video element is present on page and fetch via HTTP if direct src exists
+                    # Fallback cuối cùng: Tải trực tiếp qua URL HTTP của thẻ video nếu có
                     try:
                         video_elems = page.locator("video")
                         if video_elems.count() > 0:

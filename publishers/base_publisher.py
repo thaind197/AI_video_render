@@ -40,21 +40,12 @@ class BasePublisher:
     def kill_orphaned_chrome(self):
         """Kill background chrome.exe processes locking this session_dir"""
         try:
-            norm_dir = str(self.session_dir.resolve()).lower()
-            cmd = ["powershell", "-NoProfile", "-Command",
-                   "Get-WmiObject Win32_Process -Filter \"name='chrome.exe'\" | Select-Object ProcessId, CommandLine | ConvertTo-Json"]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if res.stdout.strip():
-                import json
-                data = json.loads(res.stdout)
-                if isinstance(data, dict):
-                    data = [data]
-                for item in data:
-                    cmdline = (item.get("CommandLine") or "").lower()
-                    pid = item.get("ProcessId")
-                    if norm_dir in cmdline and pid:
-                        logger.info(f"[{self.platform_name}] Killeing orphan Chrome PID={pid} for session: {self.session_dir.name}")
-                        subprocess.run(["taskkill", "/F", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            norm_dir = str(self.session_dir.resolve()).lower().replace("/", "\\")
+            cmd = [
+                "powershell", "-NoProfile", "-Command",
+                f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Stop-Process -Force"
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
         except Exception as e:
             logger.warning(f"[{self.platform_name}] Lỗi check orphan Chrome: {e}")
 
@@ -70,28 +61,35 @@ class BasePublisher:
                 except Exception:
                     pass
 
+        kwargs = {
+            "user_data_dir": str(self.session_dir),
+            "ignore_default_args": ["--enable-automation", "--password-store=basic", "--disable-component-extensions-with-background-pages"]
+        }
+        if os.path.exists(r"C:\Program Files\Google\Chrome\Application\chrome.exe") or os.path.exists(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"):
+            kwargs["channel"] = "chrome"
+
         if headless:
             context = p.chromium.launch_persistent_context(
-                user_data_dir=str(self.session_dir),
                 headless=True,
                 viewport={'width': 1920, 'height': 1080},
                 args=_CHROMIUM_ARGS,
+                **kwargs
             )
         elif hidden:
             # OFF-SCREEN mode: headless=False (FB-compatible) nhưng cửa sổ ẩn
             context = p.chromium.launch_persistent_context(
-                user_data_dir=str(self.session_dir),
                 headless=False,
                 no_viewport=True,
                 args=_HIDDEN_ARGS,
+                **kwargs
             )
             logger.info(f"[{self.platform_name}] Browser an (off-screen) - chay background.")
         else:
             context = p.chromium.launch_persistent_context(
-                user_data_dir=str(self.session_dir),
                 headless=False,
                 no_viewport=True,
                 args=_CHROMIUM_ARGS + ['--start-maximized'],
+                **kwargs
             )
         return context
 
@@ -157,16 +155,20 @@ class BasePublisher:
 
         _p(f"Script: {script_path}")
 
-        # Chay _login_browser.py nhu subprocess rieng biet
-        # KHONG dung CREATE_NEW_CONSOLE de output van hien trong server console
+        # Chay _login_browser.py nhu subprocess ngam (CREATE_NO_WINDOW) de khong hien cua so Console
         cmd = [python_exe, str(script_path), str(self.session_dir.resolve()), login_url]
         _p(f"Launching subprocess: {' '.join(cmd[:2])} ...")
+
+        creation_flags = 0
+        if sys.platform == "win32":
+            creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
         try:
             proc = subprocess.Popen(
                 cmd,
-                stdout=sys.stdout,   # Forward output ve server console
-                stderr=sys.stderr,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creation_flags
             )
             _p(f"Subprocess PID={proc.pid} - cho user dang nhap va dong browser...")
 
