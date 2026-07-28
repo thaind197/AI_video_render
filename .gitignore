@@ -1,9 +1,10 @@
-# Byte-compiled / optimized / DLL files
+# ── Python ───────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
 
-# Environments
+# ── Virtual Environments ─────────────────────────────────
 venv/
 .venv/
 env/
@@ -11,20 +12,45 @@ ENV/
 env.bak/
 venv.bak/
 
-# Environment variables & secrets (API Keys)
+# ── Environment variables & secrets ──────────────────────
 .env
 
-# Project Storage & Browser Sessions (Database, Videos, Cookies)
+# ── PyInstaller Build Artifacts ──────────────────────────
+build/
+dist/
+*.spec
+
+# ── Project Storage (Database, Videos, Browser Sessions) ─
 storage/browser_sessions/
 storage/downloads/
 storage/generated/
 storage/final/
+storage/logs/
 storage/*.db
 storage/*.db-journal
 storage/*.db-wal
 storage/*.sqlite
+storage/fb_profiles.json
+storage/tiktok_profiles.json
+veo_jobs.db
+veo_jobs.db-journal
+veo_jobs.db-wal
 
-# OS Generated Files
+# ── Crash & Runtime Logs ─────────────────────────────────
+*.log
+veo_studio_crash.log
+
+# ── Local Media Files ────────────────────────────────────
+*.mp4
+*.webp
+*.jpg
+*.png
+*.gif
+*.avi
+*.mkv
+*.mov
+
+# ── OS Generated Files ───────────────────────────────────
 .DS_Store
 .DS_Store?
 ._*
@@ -32,20 +58,22 @@ storage/*.sqlite
 .Trashes
 ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# IDE & Editors
+# ── IDE & Editors ────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
-# Logs
-*.log
+# ── Node (if any frontend tooling) ───────────────────────
+node_modules/
+package-lock.json
 
-# Local media & metadata
-*.mp4
-*.webp
-*.jpg
-*.png
-storage/fb_profiles.json
+# ── Misc ─────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp

@@ -682,12 +682,23 @@ async function bulkPostFBJobs() {
 
 
 // Render Video Library 9:16 Grid (Gom nhóm theo Prompt / Topic)
+let expandedGroupKeys = new Set();
+let lastLibrarySignature = "";
+
 function renderLibraryGrid(jobs) {
     const grid = document.getElementById("library-video-grid");
     if (!grid) return;
-    grid.innerHTML = "";
 
     const readyJobs = jobs.filter(j => j.status === "PUBLISHED" || j.status === "READY_TO_POST" || j.status === "VEO_DONE");
+
+    // So sánh signature để tránh giật/xóa DOM khi không có thay đổi
+    const currentSignature = JSON.stringify(readyJobs.map(j => [j.id, j.status, j.fb_posted, j.tiktok_posted, Array.from(selectedConcatJobIds).includes(j.id)]));
+    if (currentSignature === lastLibrarySignature && grid.children.length > 0) {
+        return; // Không cần render lại nếu dữ liệu hoàn toàn giống hệt
+    }
+    lastLibrarySignature = currentSignature;
+
+    grid.innerHTML = "";
 
     if (readyJobs.length === 0) {
         grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-secondary);">Chưa có video 9:16 nào được render thành công.</div>';
@@ -706,8 +717,9 @@ function renderLibraryGrid(jobs) {
         const groupJobs = grouped[promptKey];
         const { shortText, fullText } = formatPromptText(promptKey, 50);
 
+        const isExpanded = expandedGroupKeys.has(promptKey);
         const groupCard = document.createElement("div");
-        groupCard.className = "prompt-collapse-item collapsed";
+        groupCard.className = `prompt-collapse-item ${isExpanded ? 'expanded' : 'collapsed'}`;
 
         const allGroupSelected = groupJobs.every(j => selectedConcatJobIds.has(j.id));
 
@@ -743,7 +755,13 @@ function renderLibraryGrid(jobs) {
             if (e.target.closest(".group-select-all-cb") || e.target.closest("button")) return;
             groupCard.classList.toggle("collapsed");
             groupCard.classList.toggle("expanded");
+            if (groupCard.classList.contains("expanded")) {
+                expandedGroupKeys.add(promptKey);
+            } else {
+                expandedGroupKeys.delete(promptKey);
+            }
         });
+
 
         // Click checkbox nhóm chọn tất cả video trong nhóm (không trigger toggle collapse)
         groupCb.addEventListener("click", (e) => {
@@ -2194,8 +2212,68 @@ window.checkLabsGoogleStatus = checkLabsGoogleStatus;
 window.loginLabsGoogle = loginLabsGoogle;
 window.generateViaLabsGoogle = generateViaLabsGoogle;
 
-// ── Auto-load profiles khi vào Social tab ───────────────────
+async function fetchAppVersion() {
+    try {
+        const res = await fetch(`${API_BASE}/api/version`);
+        const data = await res.json();
+        if (data && data.version) {
+            const badge = document.getElementById("app-version-badge");
+            if (badge) {
+                badge.innerText = `PRO v${data.version}`;
+            }
+        }
+        if (data && data.remote) {
+            if (data.remote.is_blocked) {
+                showBlockedVersionModal(data.remote);
+            } else if (data.remote.is_update_available) {
+                showUpdateAvailableBadge(data.remote);
+            }
+        }
+    } catch (e) {
+        console.warn("Could not fetch app version:", e);
+    }
+}
+
+function showBlockedVersionModal(remote) {
+    let modal = document.getElementById("blocked-version-modal");
+    if (!modal) {
+        modal = document.createElement("div");
+        modal.id = "blocked-version-modal";
+        modal.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.92);z-index:999999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);font-family:Inter,sans-serif;";
+        document.body.appendChild(modal);
+    }
+    const msg = remote.update_message || "Phiên bản bạn đang dùng đã hết hạn. Vui lòng cập nhật phiên bản mới nhất để tiếp tục sử dụng.";
+    const downloadUrl = remote.download_url || "#";
+    modal.innerHTML = `
+        <div style="background:#1f1f1f;border:2px solid #ff4d4f;border-radius:16px;padding:36px;max-width:540px;width:90%;text-align:center;box-shadow:0 20px 50px rgba(255,77,79,0.3);color:#fff;">
+            <div style="width:70px;height:70px;background:rgba(255,77,79,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:#ff4d4f;font-size:32px;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h2 style="color:#ff4d4f;margin:0 0 12px;font-size:22px;font-weight:700;">YÊU CẦU CẬP NHẬT PHIÊN BẢN MỚI</h2>
+            <p style="color:#d9d9d9;font-size:14px;line-height:1.6;margin-bottom:20px;">${escapeHtml(msg)}</p>
+            <div style="background:rgba(255,255,255,0.05);padding:12px;border-radius:8px;margin-bottom:24px;font-size:13px;color:#aaa;display:flex;justify-content:space-around;">
+                <span>Phiên bản hiện tại: <strong style="color:#fff;">v${remote.current_version}</strong></span>
+                <span>Yêu cầu tối thiểu: <strong style="color:#ff4d4f;">v${remote.min_version}</strong></span>
+            </div>
+            <a href="${downloadUrl}" target="_blank" class="ant-btn ant-btn-primary ant-btn-lg" style="background:#ff4d4f;border-color:#ff4d4f;font-weight:600;width:100%;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-size:15px;">
+                <i class="fa-solid fa-download"></i> TẢI BẢN CẬP NHẬT MỚI NGAY
+            </a>
+        </div>
+    `;
+}
+
+function showUpdateAvailableBadge(remote) {
+    const badge = document.getElementById("app-version-badge");
+    if (badge) {
+        badge.innerHTML = `PRO v${remote.current_version} <a href="${remote.download_url}" target="_blank" style="color:#52c41a;margin-left:6px;font-weight:bold;text-decoration:none;" title="Có bản v${remote.latest_version} mới!"><i class="fa-solid fa-circle-up"></i> New v${remote.latest_version}</a>`;
+    }
+}
+
+
+// ── Auto-load profiles & version khi trang web load ───────────────────
 document.addEventListener("DOMContentLoaded", () => {
+    fetchAppVersion();
+
     const socialNav = document.querySelector('[data-tab="social"]');
     if (socialNav) {
         socialNav.addEventListener("click", () => {
@@ -2212,3 +2290,4 @@ document.addEventListener("DOMContentLoaded", () => {
         checkLabsGoogleStatus();
     }
 });
+

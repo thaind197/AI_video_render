@@ -1,5 +1,7 @@
+import sys
 import threading
 import logging
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
@@ -17,6 +19,7 @@ from core.video_processor import VideoProcessor
 from publishers.facebook_publisher import FacebookPublisher
 from publishers.tiktok_publisher import TikTokPublisher
 from publishers.x_publisher import XPublisher
+from version import __version__, APP_NAME, FULL_NAME, check_remote_version
 
 logger = logging.getLogger("FastAPIServer")
 
@@ -41,9 +44,9 @@ async def lifespan(app: FastAPI):
         queue_mgr.stop()
 
 app = FastAPI(
-    title="Veo Studio AI PRO API",
+    title=APP_NAME,
     description="Backend REST API Server for AI Short Video Automation & Social Publishing",
-    version="2.5.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -55,6 +58,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/api/version")
+def get_version():
+    remote_data = check_remote_version()
+    return {
+        "status": "success",
+        "version": __version__,
+        "app_name": APP_NAME,
+        "full_name": FULL_NAME,
+        "remote": remote_data
+    }
+
+
 
 # Pydantic Schemas
 class PromptBatchRequest(BaseModel):
@@ -1135,9 +1151,15 @@ def video_stream(job_id: int, request: Request):
         return StreamingResponse(iter_full(), status_code=200, headers=headers, media_type="video/mp4")
 
 # Serve Static UI & Videos
-UI_DIR = Path(__file__).resolve().parent / "ui"
-DOWNLOADS_DIR = Path(__file__).resolve().parent / "storage" / "downloads"
+if getattr(sys, 'frozen', False):
+    BASE_DIR = Path(sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
+UI_DIR = BASE_DIR / "ui"
+DOWNLOADS_DIR = BASE_DIR / "storage" / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
 app.mount("/videos", StaticFiles(directory=str(FINAL_DIR)), name="videos")

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: ai_video_render
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+      - ./veo_jobs.db:/app/veo_jobs.db
+      - ./.env:/app/.env
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: ai_video_tunnel
+    command: tunnel --url http://app:8000
+    restart: unless-stopped
+    depends_on:
+      - app

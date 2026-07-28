@@ -66,18 +66,19 @@ class BasePublisher:
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
     def kill_orphaned_chrome(self, target_dir: Path = None):
-        """Kill background chrome.exe processes locking session_dir"""
+        """Kill background chrome.exe processes locking session_dir - không dùng PowerShell."""
         try:
             dir_to_check = target_dir or self.session_dir
-            norm_dir = str(dir_to_check.resolve()).lower().replace("/", "\\")
-            cmd = [
-                "powershell", "-NoProfile", "-Command",
-                f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Stop-Process -Force"
-            ]
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, creationflags=flags)
+            # Xóa lock files trực tiếp thay vì kill process (an toàn hơn)
+            for lock_file in ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
+                lock_path = dir_to_check / lock_file
+                if lock_path.exists():
+                    try:
+                        lock_path.unlink()
+                    except Exception:
+                        pass
         except Exception as e:
-            logger.warning(f"[{self.platform_name}] Lỗi check orphan Chrome: {e}")
+            logger.warning(f"[{self.platform_name}] Lỗi cleanup lock files: {e}")
 
     def prepare_worker_session_dir(self, worker_id: int) -> Path:
         """Create an isolated worker session directory cloned from main session_dir."""
@@ -167,13 +168,7 @@ class BasePublisher:
             return False
 
     def interactive_login(self, login_url: str):
-        """Mo trinh duyet de user dang nhap thu cong.
-
-        Chay _login_browser.py nhu SUBPROCESS RIENG BIET de dam bao:
-        - Playwright chay trong process moi (khong bi conflict voi thread)
-        - Browser window LUON hien tren man hinh
-        - Moi profile co session_dir rieng -> session doc lap
-        """
+        """Mở trình duyệt để user đăng nhập thủ công."""
         def _p(msg):
             try:
                 print(f"[interactive_login] {msg}", flush=True)
@@ -184,7 +179,7 @@ class BasePublisher:
         _p(f"session_dir={self.session_dir}")
         _p(f"login_url={login_url}")
 
-        # Xoa lock files con sot tu session cu
+        # Xóa lock files còn sót từ session cũ
         for lock_file in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
             lock_path = self.session_dir / lock_file
             if lock_path.exists():
@@ -194,54 +189,14 @@ class BasePublisher:
                 except Exception:
                     pass
 
-        # Tìm đường dẫn pythonw.exe (GUI executable không hiện cửa sổ Console đen)
-        python_exe = sys.executable
-        pythonw_exe = Path(python_exe).parent / "pythonw.exe"
-        if sys.platform == "win32" and pythonw_exe.exists():
-            executable = str(pythonw_exe)
-        else:
-            executable = python_exe
-        _p(f"Python executable: {executable}")
-
-        # Tim _login_browser.py (cung thu muc voi server.py)
-        script_path = Path(__file__).parent.parent / "_login_browser.py"
-        if not script_path.exists():
-            # Fallback: tim trong current working dir
-            script_path = Path("_login_browser.py")
-        if not script_path.exists():
-            _p(f"ERROR: _login_browser.py not found at {script_path}")
-            raise FileNotFoundError(f"_login_browser.py not found")
-
-        _p(f"Script: {script_path}")
-
-        # Chay _login_browser.py qua pythonw (gui mode) + CREATE_NO_WINDOW
-        cmd = [executable, str(script_path), str(self.session_dir.resolve()), login_url]
-        _p(f"Launching subprocess: {' '.join(cmd[:2])} ...")
-
-        creation_flags = 0
-        if sys.platform == "win32":
-            creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
-
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creation_flags
-            )
-            _p(f"Subprocess PID={proc.pid} - cho user dang nhap va dong browser...")
-
-            # BLOCKING: cho den khi _login_browser.py thoat (user dong browser)
-            proc.wait(timeout=660)  # 11 phut (script co timeout 10 phut)
-
-            _p(f"Subprocess exited. PID={proc.pid} exitCode={proc.returncode}")
-        except subprocess.TimeoutExpired:
-            _p("Timeout - killing subprocess")
-            proc.kill()
-            proc.wait()
+            from _login_browser import launch_login_browser
+            launch_login_browser(str(self.session_dir.resolve()), login_url)
+            _p("Đã hoàn tất interactive_login!")
         except Exception as e:
-            _p(f"ERROR: {e}")
+            _p(f"Lỗi interactive_login: {e}")
             raise
+
 
     def post_video(self, video_path: Path, caption: str, tags: list = None) -> bool:
         raise NotImplementedError("Subclasses must implement post_video")

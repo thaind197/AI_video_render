@@ -6,8 +6,10 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-# API Keys
+# API Keys & Remote Config
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+FIREBASE_VERSION_URL = os.getenv("FIREBASE_VERSION_URL", "")
+
 
 # Directory Paths
 STORAGE_DIR = BASE_DIR / "storage"
