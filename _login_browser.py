@@ -43,7 +43,8 @@ def kill_orphan_process(session_dir_str: str):
             "powershell", "-NoProfile", "-Command",
             f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Stop-Process -Force"
         ]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, creationflags=flags)
     except Exception as e:
         print(f"[LoginBrowser] Warning cleanup orphan: {e}", flush=True)
 
@@ -56,7 +57,8 @@ def is_browser_running(session_dir_str: str) -> bool:
             "powershell", "-NoProfile", "-Command",
             f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Measure-Object | Select-Object -ExpandProperty Count"
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5, creationflags=flags)
         count_str = res.stdout.strip()
         if count_str.isdigit() and int(count_str) > 0:
             return True
