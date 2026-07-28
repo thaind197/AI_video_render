@@ -70,6 +70,35 @@ def get_version():
         "remote": remote_data
     }
 
+@app.get("/api/remote-config")
+def get_remote_config():
+    mgr = get_remote_config_manager()
+    status_info = mgr.check_app_status()
+    return {
+        "status": "success",
+        "config": status_info
+    }
+
+@app.post("/api/remote-config/refresh")
+def refresh_remote_config():
+    mgr = get_remote_config_manager()
+    mgr.invalidate_cache()
+    status_info = mgr.check_app_status(force_reload=True)
+    return {
+        "status": "success",
+        "message": "Đã invalidate cache và làm mới cấu hình từ xa thành công!",
+        "config": status_info
+    }
+
+def verify_app_not_blocked(feature_name: str = None):
+    mgr = get_remote_config_manager()
+    status_info = mgr.check_app_status()
+    if status_info.get("is_blocked"):
+        reason = status_info.get("block_reason", "Ứng dụng bị khóa từ xa.")
+        raise HTTPException(status_code=403, detail=reason)
+    if feature_name and not mgr.is_feature_enabled(feature_name):
+        raise HTTPException(status_code=403, detail=f"Tính năng '{feature_name}' tạm thời bị vô hiệu hóa từ xa bởi Quản trị viên.")
+
 
 
 # Pydantic Schemas
@@ -351,6 +380,7 @@ def save_fb_api_config(req: FbApiConfigRequest):
 @app.post("/api/generate-prompt")
 def generate_prompt_batch(req: PromptBatchRequest, background_tasks: BackgroundTasks):
     """Generate batch of 10s video scripts & prompts from a topic"""
+    verify_app_not_blocked("veo_generation")
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="Vui lòng nhập chủ đề video")
 
@@ -379,6 +409,7 @@ def generate_prompt_batch(req: PromptBatchRequest, background_tasks: BackgroundT
 @app.post("/api/clone-video")
 def clone_video(req: CloneVideoRequest):
     """Add a TikTok/Reels clone video URL job"""
+    verify_app_not_blocked("clone_video")
     if not req.url.strip():
         raise HTTPException(status_code=400, detail="Vui lòng nhập link video")
 

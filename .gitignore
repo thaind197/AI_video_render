@@ -14,11 +14,22 @@ venv.bak/
 
 # ── Environment variables & secrets ──────────────────────
 .env
+.env.local
+.env.development
+.env.production
+!.env.example
 
-# ── PyInstaller Build Artifacts ──────────────────────────
+# ── PyInstaller & Inno Setup Build Artifacts ────────────
 build/
 dist/
+Output/
 *.spec
+!VeoStudioAI.spec
+*.exe
+*.msi
+*.zip
+*.rar
+*.7z
 
 # ── Project Storage (Database, Videos, Browser Sessions) ─
 storage/browser_sessions/
@@ -30,8 +41,8 @@ storage/*.db
 storage/*.db-journal
 storage/*.db-wal
 storage/*.sqlite
-storage/fb_profiles.json
-storage/tiktok_profiles.json
+storage/*.json
+!storage/.gitkeep
 veo_jobs.db
 veo_jobs.db-journal
 veo_jobs.db-wal
@@ -42,8 +53,10 @@ veo_studio_crash.log
 
 # ── Local Media Files ────────────────────────────────────
 *.mp4
+*.webm
 *.webp
 *.jpg
+*.jpeg
 *.png
 *.gif
 *.avi
@@ -72,6 +85,9 @@ desktop.ini
 # ── Node (if any frontend tooling) ───────────────────────
 node_modules/
 package-lock.json
+
+# ── AI Agents Scratch & Temp ─────────────────────────────
+.agents/scratch/
 
 # ── Misc ─────────────────────────────────────────────────
 *.bak
