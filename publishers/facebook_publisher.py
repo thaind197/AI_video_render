@@ -156,8 +156,8 @@ class FacebookPublisher(BasePublisher):
 
         try:
             with sync_playwright() as p:
-                # hidden=True: cửa sổ ẩn ngoài màn hình, FB không detect automation
-                context = self.get_browser_context(p, headless=False, hidden=True)
+                # hidden=False: mở trình duyệt trực tiếp trên màn hình để user quan sát quá trình đăng
+                context = self.get_browser_context(p, headless=False, hidden=False)
                 page = context.new_page()
                 page.set_default_timeout(60000)
 

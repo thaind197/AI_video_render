@@ -13,6 +13,8 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from publishers.base_publisher import check_session_has_cookies
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,9 +76,9 @@ class TikTokProfileManager:
             changed = True
 
         for p in config.get("profiles", []):
-            if "logged_in" not in p:
-                sess = self.get_session_dir(p["id"])
-                has_cookies = (sess / "Default" / "Cookies").exists()
+            sess = self.get_session_dir(p["id"])
+            has_cookies = check_session_has_cookies(sess)
+            if "logged_in" not in p or (not p.get("logged_in") and has_cookies):
                 p["logged_in"] = has_cookies
                 changed = True
 
@@ -93,11 +95,17 @@ class TikTokProfileManager:
         return self._profiles_dir / profile_id
 
     def is_logged_in(self, profile_id: str) -> bool:
-        """True nếu profile đã đăng nhập (đọc từ JSON config)."""
+        """True nếu profile đã đăng nhập (đọc từ JSON config hoặc kiểm tra cookies thực tế)."""
         config = self._load_config()
         for p in config.get("profiles", []):
             if p["id"] == profile_id:
-                return bool(p.get("logged_in", False))
+                if p.get("logged_in", False):
+                    return True
+                sess = self.get_session_dir(profile_id)
+                if check_session_has_cookies(sess):
+                    self._set_login_status(profile_id, True)
+                    return True
+                return False
         return False
 
     def _set_login_status(self, profile_id: str, logged_in: bool):
@@ -196,8 +204,7 @@ class TikTokProfileManager:
         self._set_login_status(profile_id, False)
         pub.interactive_login("https://www.tiktok.com/upload")
 
-        cookies_file = session_dir / "Default" / "Cookies"
-        if cookies_file.exists() and cookies_file.stat().st_size > 3000:
+        if check_session_has_cookies(session_dir):
             self._set_login_status(profile_id, True)
             logger.info(f"[TikTokProfileManager] Đã lưu session login TikTok: {profile['name']}")
         else:

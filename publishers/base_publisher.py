@@ -29,6 +29,34 @@ _HIDDEN_ARGS = [
 ]
 
 
+def check_session_has_cookies(session_dir: Path, min_size: int = 2000) -> bool:
+    """Kiểm tra xem session_dir có chứa file Cookies hợp lệ từ Chromium hay không.
+
+    Hỗ trợ cả Chromium cũ (Default/Cookies) và Chromium mới (Default/Network/Cookies).
+    """
+    if not session_dir or not session_dir.exists():
+        return False
+
+    candidate_paths = [
+        session_dir / "Default" / "Network" / "Cookies",
+        session_dir / "Default" / "Cookies",
+        session_dir / "Network" / "Cookies",
+        session_dir / "Cookies",
+    ]
+    for c_path in candidate_paths:
+        if c_path.exists() and c_path.stat().st_size > min_size:
+            return True
+
+    try:
+        for c_path in session_dir.glob("**/Cookies"):
+            if c_path.is_file() and c_path.stat().st_size > min_size:
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
 class BasePublisher:
     """Base Class for Social Media Browser Automation using Playwright Persistent Session Context"""
 
@@ -46,7 +74,8 @@ class BasePublisher:
                 "powershell", "-NoProfile", "-Command",
                 f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Stop-Process -Force"
             ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, creationflags=flags)
         except Exception as e:
             logger.warning(f"[{self.platform_name}] Lỗi check orphan Chrome: {e}")
 
@@ -120,6 +149,8 @@ class BasePublisher:
         """Check if session directory exists and contains user browser data files"""
         if not self.session_dir.exists():
             return False
+        if check_session_has_cookies(self.session_dir):
+            return True
         files = [f for f in self.session_dir.iterdir() if f.name != ".DS_Store"]
         return len(files) > 0
 
@@ -163,9 +194,14 @@ class BasePublisher:
                 except Exception:
                     pass
 
-        # Tim duong dan python.exe dang chay
+        # Tìm đường dẫn pythonw.exe (GUI executable không hiện cửa sổ Console đen)
         python_exe = sys.executable
-        _p(f"Python: {python_exe}")
+        pythonw_exe = Path(python_exe).parent / "pythonw.exe"
+        if sys.platform == "win32" and pythonw_exe.exists():
+            executable = str(pythonw_exe)
+        else:
+            executable = python_exe
+        _p(f"Python executable: {executable}")
 
         # Tim _login_browser.py (cung thu muc voi server.py)
         script_path = Path(__file__).parent.parent / "_login_browser.py"
@@ -178,13 +214,13 @@ class BasePublisher:
 
         _p(f"Script: {script_path}")
 
-        # Chay _login_browser.py nhu subprocess ngam (CREATE_NO_WINDOW) de khong hien cua so Console
-        cmd = [python_exe, str(script_path), str(self.session_dir.resolve()), login_url]
+        # Chay _login_browser.py qua pythonw (gui mode) + CREATE_NO_WINDOW
+        cmd = [executable, str(script_path), str(self.session_dir.resolve()), login_url]
         _p(f"Launching subprocess: {' '.join(cmd[:2])} ...")
 
         creation_flags = 0
         if sys.platform == "win32":
-            creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
 
         try:
             proc = subprocess.Popen(

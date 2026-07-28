@@ -70,6 +70,8 @@ class MultiThreadQueueManager:
             self.labs_worker_ids.add(worker_id)
 
     def _safe_submit(self, pool, func, job_id):
+        if not self.is_running:
+            return
         with self.lock:
             if job_id in self.active_jobs:
                 return
@@ -82,7 +84,11 @@ class MultiThreadQueueManager:
                 with self.lock:
                     self.active_jobs.discard(job_id)
 
-        pool.submit(wrapped)
+        try:
+            pool.submit(wrapped)
+        except RuntimeError:
+            with self.lock:
+                self.active_jobs.discard(job_id)
 
     def add_prompt_batch(
         self,
