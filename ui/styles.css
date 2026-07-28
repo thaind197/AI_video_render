@@ -1122,3 +1122,81 @@ body {
     background: #aaa;
 }
 
+/* ─── Aesthetic Custom Collapse Component (Grouped Prompts) ─── */
+.prompt-collapse-item {
+    grid-column: 1 / -1;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.prompt-collapse-item:hover {
+    border-color: rgba(24, 144, 255, 0.4);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+.prompt-collapse-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    background: #fafafa;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease;
+    gap: 14px;
+}
+
+.prompt-collapse-header:hover {
+    background: #f0f7ff;
+}
+
+.prompt-collapse-title-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.prompt-collapse-chevron {
+    transition: transform 0.3s ease;
+    font-size: 13px;
+    color: var(--text-secondary);
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.prompt-collapse-item.expanded .prompt-collapse-chevron {
+    transform: rotate(180deg);
+    color: #1890ff;
+    background: #e6f7ff;
+}
+
+.prompt-collapse-body {
+    max-height: 3000px;
+    opacity: 1;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, padding 0.3s ease;
+    padding: 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.prompt-collapse-item.collapsed .prompt-collapse-body {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-color: transparent;
+}
+
+

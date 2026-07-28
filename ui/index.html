@@ -387,6 +387,41 @@
                                         style="width: 100%;">
                                 </div>
                             </div>
+                            <div style="display: flex; gap: 12px; margin-top: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.03); padding: 14px; border-radius: 10px; border: 1px solid var(--border-color);">
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-crop-simple"></i> Tỷ lệ khung hình:</label>
+                                    <select id="prompt-aspect-ratio" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                        <option value="9:16" selected>9:16 (Shorts/Reels)</option>
+                                        <option value="16:9">16:9 (Ngang YouTube)</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-clock"></i> Thời lượng:</label>
+                                    <select id="prompt-duration" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                        <option value="8" selected>8s (Mặc định)</option>
+                                        <option value="6">6s</option>
+                                        <option value="4">4s</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-clone"></i> Số biến thể (x):</label>
+                                    <select id="prompt-variants" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                        <option value="1" selected>1x</option>
+                                        <option value="2">x2</option>
+                                        <option value="3">x3</option>
+                                        <option value="4">x4</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 200px;">
+                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-robot"></i> Model Google Veo:</label>
+                                    <select id="prompt-veo-model" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                        <option value="veo-3.1-lite-generate-preview" selected>Veo 3.1 - Lite [Lower Priority]</option>
+                                        <option value="veo-3.1-fast-generate-preview">Veo 3.1 - Fast [High Speed]</option>
+                                        <option value="veo-3.1-generate-preview">Veo 3.1 - Standard [Quality]</option>
+                                        <option value="veo-2.0-generate-001">Veo 2.0 Legacy</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div style="display: flex; gap: 12px; margin-top: 25px; flex-wrap: wrap; align-items: center;">
                                 <button type="submit" class="ant-btn ant-btn-primary ant-btn-lg">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i> Sinh Batch Video Kịch Bản (Gemini API)
@@ -704,6 +739,26 @@
                                     min="1" max="50" style="max-width: 250px;">
                                 <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Số lượng
                                     Worker chạy xử lý video song song cùng lúc (mặc định: 5 luồng).</small>
+                            </div>
+                            <div class="form-group" style="margin-top: 20px;">
+                                <label><i class="fa-brands fa-chrome" style="color: #4285f4;"></i> Số trình duyệt Google Labs chạy song song (Max Concurrent Labs Browsers):</label>
+                                <input type="number" id="settings-max-labs-workers" class="ant-input ant-input-lg" value="3"
+                                    min="1" max="10" style="max-width: 250px;">
+                                <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Số lượng cửa sổ Chrome tự động hóa chạy song song cho Google Labs (mặc định: 3 trình duyệt).</small>
+                            </div>
+                            <div class="form-group" style="margin-top: 20px;">
+                                <label><i class="fa-solid fa-gears" style="color: #52c41a;"></i> Phương thức Render Video mặc định (Default Engine):</label>
+                                <div style="display: flex; gap: 15px; margin-top: 6px;">
+                                    <label class="ant-radio-wrapper" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                        <input type="radio" name="settings_gen_engine" value="labs" checked>
+                                        <span><strong>Google Labs Auto (Trình duyệt Playwright đa luồng)</strong></span>
+                                    </label>
+                                    <label class="ant-radio-wrapper" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                        <input type="radio" name="settings_gen_engine" value="veo_api">
+                                        <span>Google Veo API (Official API Key)</span>
+                                    </label>
+                                </div>
+                                <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Chọn 'Google Labs Auto' để tự động mở đồng thời N trình duyệt Chrome render video không giới hạn API.</small>
                             </div>
                             <div class="form-group" style="margin-top: 20px;">
                                 <label><i class="fa-solid fa-folder-open"></i> Thư mục lưu trữ Video mặc định (Storage

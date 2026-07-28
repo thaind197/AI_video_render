@@ -1,8 +1,34 @@
-// Real-time API Client connected to FastAPI Backend & SQLite DB
 const API_BASE = ""; // Same origin / Relative path
 
 let currentJobs = [];
 let isEngineRunning = false;
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatPromptText(text, maxLen = 50) {
+    if (!text) return { shortText: "", fullText: "", isTruncated: false };
+    const str = String(text).trim();
+    if (str.length > maxLen) {
+        return {
+            shortText: str.substring(0, maxLen) + "...",
+            fullText: str,
+            isTruncated: true
+        };
+    }
+    return {
+        shortText: str,
+        fullText: str,
+        isTruncated: false
+    };
+}
 
 // Ant Design Style Toast Notification Handler (Top-Right Corner)
 function showToast(message, type = "info", duration = 4000) {
@@ -427,12 +453,15 @@ function renderJobsTable(jobs) {
         // Prompt column: CLONE jobs don't have prompts, show source URL excerpt instead
         let promptExcerpt;
         if (job.source_type === "CLONE") {
-            const srcShort = (job.source_input || '').replace(/https?:\/\/(www\.)?/, '').substring(0, 45);
-            promptExcerpt = `<span style="color:var(--text-secondary);font-size:11px;"><i class="fa-brands fa-tiktok"></i> ${srcShort || 'Clone video gốc'}</span>`;
+            const srcShort = (job.source_input || '').replace(/https?:\/\/(www\.)?/, '');
+            const formatted = formatPromptText(srcShort, 50);
+            promptExcerpt = `<span style="color:var(--text-secondary);font-size:11px;" title="${escapeHtml(formatted.fullText)}"><i class="fa-brands fa-tiktok"></i> ${escapeHtml(formatted.shortText) || 'Clone video gốc'}</span>`;
         } else {
-            promptExcerpt = job.veo_prompt ? (job.veo_prompt.substring(0, 50) + "...") : "Chờ sinh prompt...";
+            const fullP = job.veo_prompt || job.source_input || "Chờ sinh prompt...";
+            const formatted = formatPromptText(fullP, 50);
+            promptExcerpt = `<span style="color:var(--text-secondary);font-size:11px;cursor:pointer;" title="${escapeHtml(formatted.fullText)}">${escapeHtml(formatted.shortText)}</span>`;
         }
-        const titleStr = job.title || job.source_input || `Job #${job.id}`;
+        const titleFormatted = formatPromptText(job.title || job.source_input || `Job #${job.id}`, 50);
         const durationLabel = job.duration_sec != null ? `${job.duration_sec}s` : "-";
 
         const isChecked = selectedConcatJobIds.has(job.id) ? "checked" : "";
@@ -442,7 +471,7 @@ function renderJobsTable(jobs) {
             </td>
             <td><strong>#${job.id}</strong></td>
             <td>${typeBadge}</td>
-            <td><strong>${titleStr}</strong></td>
+            <td><strong title="${escapeHtml(titleFormatted.fullText)}" style="cursor:pointer;">${escapeHtml(titleFormatted.shortText)}</strong></td>
             <td style="max-width: 250px; font-size: 11px; color: var(--text-secondary);">${promptExcerpt}</td>
             <td>${durationLabel}</td>
             <td>${statusTag}</td>
@@ -652,7 +681,7 @@ async function bulkPostFBJobs() {
 }
 
 
-// Render Video Library 9:16 Grid
+// Render Video Library 9:16 Grid (Gom nhóm theo Prompt / Topic)
 function renderLibraryGrid(jobs) {
     const grid = document.getElementById("library-video-grid");
     if (!grid) return;
@@ -665,61 +694,154 @@ function renderLibraryGrid(jobs) {
         return;
     }
 
+    // Gom nhóm theo Prompt / Topic (source_input hoặc title gốc)
+    const grouped = {};
     readyJobs.forEach(job => {
-        const isSelected = selectedConcatJobIds.has(job.id);
-        const card = document.createElement("div");
-        card.className = `video-card-916 ${isSelected ? 'selected' : ''}`;
+        const key = (job.source_input || job.title || "Khác").trim();
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(job);
+    });
 
-        // Social post buttons
-        const fbBtn = job.fb_posted
-            ? `<span style="font-size:11px;color:#52c41a;"><i class="fa-solid fa-circle-check"></i> FB</span>`
-            : `<button class="ant-btn" style="font-size:11px;padding:3px 8px;height:auto;background:#1877f2;color:#fff;border-color:#1877f2;"
-                onclick="event.stopPropagation(); postVideoToFB(${job.id})">
-                <i class="fa-brands fa-facebook"></i> Đăng FB
-               </button>`;
+    Object.keys(grouped).forEach(promptKey => {
+        const groupJobs = grouped[promptKey];
+        const { shortText, fullText } = formatPromptText(promptKey, 50);
 
-        const tiktokBtn = job.tiktok_posted
-            ? `<span style="font-size:11px;color:#52c41a;"><i class="fa-solid fa-circle-check"></i> TikTok</span>`
-            : `<button class="ant-btn" style="font-size:11px;padding:3px 8px;height:auto;background:#fe2c55;color:#fff;border-color:#fe2c55;"
-                onclick="event.stopPropagation(); postVideoToTikTok(${job.id})">
-                <i class="fa-brands fa-tiktok"></i> Đăng TikTok
-               </button>`;
+        const groupCard = document.createElement("div");
+        groupCard.className = "prompt-collapse-item collapsed";
 
-        card.innerHTML = `
-            <input type="checkbox" class="video-card-checkbox" data-job-id="${job.id}" ${isSelected ? 'checked' : ''}>
-            <div class="video-thumbnail-916">
-                <i class="fa-solid fa-circle-play play-icon"></i>
+        const allGroupSelected = groupJobs.every(j => selectedConcatJobIds.has(j.id));
+
+        groupCard.innerHTML = `
+            <div class="prompt-collapse-header">
+                <div class="prompt-collapse-title-area">
+                    <span class="prompt-collapse-chevron"><i class="fa-solid fa-chevron-down"></i></span>
+                    <input type="checkbox" class="group-select-all-cb" ${allGroupSelected ? 'checked' : ''} style="transform: scale(1.25); cursor: pointer;" title="Tích chọn tất cả video trong nhóm prompt này">
+                    <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: var(--text-primary);" title="${escapeHtml(fullText)}">
+                        <i class="fa-solid fa-folder-open" style="color: #1890ff; margin-right: 6px;"></i>
+                        <span class="prompt-title-text">${escapeHtml(shortText)}</span>
+                    </h3>
+                    <span class="ant-tag ant-tag-processing" style="font-size: 11px; margin-left: 4px; border-radius: 10px;">${groupJobs.length} video</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;" onclick="event.stopPropagation()">
+                    <button class="ant-btn ant-btn-default btn-concat-group-fast" style="font-size: 12px; padding: 3px 12px; height: 30px; border-radius: 6px;">
+                        <i class="fa-solid fa-wand-magic-sparkles" style="color: #faad14;"></i> Ghép Nhóm Này (${groupJobs.length})
+                    </button>
+                </div>
             </div>
-            <div class="video-card-info">
-                <h4>${job.title || `Video #${job.id}`}</h4>
-                <small style="color: var(--text-secondary);">${job.duration_sec != null ? job.duration_sec + 's' : ''} • 9:16 HD</small>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;">
-                    ${fbBtn}
-                    ${tiktokBtn}
+            <div class="prompt-collapse-body">
+                <div class="group-video-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px;">
                 </div>
             </div>
         `;
 
-        const cb = card.querySelector(".video-card-checkbox");
-        cb.addEventListener("click", (e) => {
+        const groupVideoGrid = groupCard.querySelector(".group-video-grid");
+        const groupCb = groupCard.querySelector(".group-select-all-cb");
+        const headerEl = groupCard.querySelector(".prompt-collapse-header");
+
+        // Toggle Expand/Collapse khi click vào Header (ngoại trừ checkbox và nút bấm)
+        headerEl.addEventListener("click", (e) => {
+            if (e.target.closest(".group-select-all-cb") || e.target.closest("button")) return;
+            groupCard.classList.toggle("collapsed");
+            groupCard.classList.toggle("expanded");
+        });
+
+        // Click checkbox nhóm chọn tất cả video trong nhóm (không trigger toggle collapse)
+        groupCb.addEventListener("click", (e) => {
             e.stopPropagation();
-            if (cb.checked) {
-                selectedConcatJobIds.add(job.id);
-                card.classList.add("selected");
-            } else {
-                selectedConcatJobIds.delete(job.id);
-                card.classList.remove("selected");
-            }
+        });
+        groupCb.addEventListener("change", (e) => {
+            const isChecked = e.target.checked;
+            groupJobs.forEach(j => {
+                if (isChecked) {
+                    selectedConcatJobIds.add(j.id);
+                } else {
+                    selectedConcatJobIds.delete(j.id);
+                }
+            });
+            groupCard.querySelectorAll(".video-card-checkbox").forEach(cb => {
+                cb.checked = isChecked;
+                const card = cb.closest(".video-card-916");
+                if (card) {
+                    if (isChecked) card.classList.add("selected");
+                    else card.classList.remove("selected");
+                }
+            });
             updateConcatToolbarUI();
         });
 
-        card.addEventListener("click", (e) => {
-            if (e.target === cb) return;
-            openPreviewModal(job.id);
+        // Nút ghép nhanh tất cả video trong nhóm prompt này
+        const btnGroupConcat = groupCard.querySelector(".btn-concat-group-fast");
+        btnGroupConcat.addEventListener("click", (e) => {
+            e.stopPropagation();
+            selectedConcatJobIds.clear();
+            groupJobs.forEach(j => selectedConcatJobIds.add(j.id));
+            updateConcatToolbarUI();
+            const btnConcat = document.getElementById("btn-concat-selected");
+            if (btnConcat) btnConcat.click();
         });
 
-        grid.appendChild(card);
+        // Render từng card video thuộc nhóm này
+        groupJobs.forEach(job => {
+            const isSelected = selectedConcatJobIds.has(job.id);
+            const card = document.createElement("div");
+            card.className = `video-card-916 ${isSelected ? 'selected' : ''}`;
+
+            const fbBtn = job.fb_posted
+                ? `<span style="font-size:11px;color:#52c41a;"><i class="fa-solid fa-circle-check"></i> FB</span>`
+                : `<button class="ant-btn" style="font-size:11px;padding:3px 8px;height:auto;background:#1877f2;color:#fff;border-color:#1877f2;"
+                    onclick="event.stopPropagation(); postVideoToFB(${job.id})">
+                    <i class="fa-brands fa-facebook"></i> Đăng FB
+                   </button>`;
+
+            const tiktokBtn = job.tiktok_posted
+                ? `<span style="font-size:11px;color:#52c41a;"><i class="fa-solid fa-circle-check"></i> TikTok</span>`
+                : `<button class="ant-btn" style="font-size:11px;padding:3px 8px;height:auto;background:#fe2c55;color:#fff;border-color:#fe2c55;"
+                    onclick="event.stopPropagation(); postVideoToTikTok(${job.id})">
+                    <i class="fa-brands fa-tiktok"></i> Đăng TikTok
+                   </button>`;
+
+            const titleObj = formatPromptText(job.title || `Video #${job.id}`, 50);
+
+            card.innerHTML = `
+                <input type="checkbox" class="video-card-checkbox" data-job-id="${job.id}" ${isSelected ? 'checked' : ''}>
+                <div class="video-thumbnail-916">
+                    <i class="fa-solid fa-circle-play play-icon"></i>
+                </div>
+                <div class="video-card-info">
+                    <h4 title="${escapeHtml(titleObj.fullText)}" style="cursor:pointer;">${escapeHtml(titleObj.shortText)}</h4>
+                    <small style="color: var(--text-secondary);">${job.duration_sec != null ? job.duration_sec + 's' : ''} • 9:16 HD</small>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;">
+                        ${fbBtn}
+                        ${tiktokBtn}
+                    </div>
+                </div>
+            `;
+
+            const cb = card.querySelector(".video-card-checkbox");
+            cb.addEventListener("click", (e) => {
+                e.stopPropagation();
+                if (cb.checked) {
+                    selectedConcatJobIds.add(job.id);
+                    card.classList.add("selected");
+                } else {
+                    selectedConcatJobIds.delete(job.id);
+                    card.classList.remove("selected");
+                }
+                groupCb.checked = groupJobs.every(j => selectedConcatJobIds.has(j.id));
+                updateConcatToolbarUI();
+            });
+
+            card.addEventListener("click", (e) => {
+                if (e.target === cb) return;
+                openPreviewModal(job.id);
+            });
+
+            groupVideoGrid.appendChild(card);
+        });
+
+        grid.appendChild(groupCard);
     });
+
     updateConcatToolbarUI();
 }
 
@@ -787,6 +909,12 @@ function initForms() {
             const keepContext = keepContextEl ? keepContextEl.checked : true;
             const customContext = customContextEl ? customContextEl.value.trim() : "";
 
+            const aspectRatio = document.getElementById("prompt-aspect-ratio") ? document.getElementById("prompt-aspect-ratio").value : "9:16";
+            const duration = document.getElementById("prompt-duration") ? parseInt(document.getElementById("prompt-duration").value) : 8;
+            const variants = document.getElementById("prompt-variants") ? parseInt(document.getElementById("prompt-variants").value) : 1;
+            const veoModel = document.getElementById("prompt-veo-model") ? document.getElementById("prompt-veo-model").value : "veo-3.1-lite-generate-preview";
+            const quality = document.getElementById("labs-quality-select") ? document.getElementById("labs-quality-select").value : "1080p";
+
             try {
                 const res = await fetch(`${API_BASE}/api/generate-prompt`, {
                     method: "POST",
@@ -797,7 +925,12 @@ function initForms() {
                         styles: finalStyles,
                         voices: finalVoices,
                         keep_context: keepContext,
-                        custom_context: customContext
+                        custom_context: customContext,
+                        aspect_ratio: aspectRatio,
+                        duration: duration,
+                        variants: variants,
+                        veo_model: veoModel,
+                        quality: quality
                     })
                 });
                 const data = await res.json();
@@ -1203,10 +1336,12 @@ async function fetchSettings() {
 
         const apiKeyEl = document.getElementById("settings-api-key");
         const maxWorkersEl = document.getElementById("settings-max-workers");
+        const maxLabsWorkersEl = document.getElementById("settings-max-labs-workers");
         const storageDirEl = document.getElementById("settings-storage-dir");
 
         if (apiKeyEl && data.gemini_api_key !== undefined) apiKeyEl.value = data.gemini_api_key;
         if (maxWorkersEl && data.max_workers !== undefined) maxWorkersEl.value = data.max_workers;
+        if (maxLabsWorkersEl && data.max_labs_workers !== undefined) maxLabsWorkersEl.value = data.max_labs_workers;
         if (storageDirEl && data.storage_dir !== undefined) storageDirEl.value = data.storage_dir;
 
         const veoModelEl = document.getElementById("settings-veo-model");
@@ -1224,6 +1359,11 @@ async function fetchSettings() {
         if (data.aspect_ratio) {
             const radio = document.querySelector(`input[name="video_aspect_ratio"][value="${data.aspect_ratio}"]`);
             if (radio) radio.checked = true;
+        }
+
+        if (data.gen_engine) {
+            const engineRadio = document.querySelector(`input[name="settings_gen_engine"][value="${data.gen_engine}"]`);
+            if (engineRadio) engineRadio.checked = true;
         }
 
         // Veo duration (4/6/8s)
@@ -1289,7 +1429,11 @@ function initSettingsForm() {
             e.preventDefault();
             const apiKey = document.getElementById("settings-api-key").value;
             const maxWorkers = parseInt(document.getElementById("settings-max-workers").value) || 5;
+            const maxLabsWorkers = parseInt(document.getElementById("settings-max-labs-workers")?.value || "3");
             const storageDir = document.getElementById("settings-storage-dir").value;
+
+            const engineRadio = document.querySelector('input[name="settings_gen_engine"]:checked');
+            const genEngine = engineRadio ? engineRadio.value : "labs";
 
             const veoModel = document.getElementById("settings-veo-model").value;
             const imageModel = document.getElementById("settings-image-model").value;
@@ -1316,6 +1460,8 @@ function initSettingsForm() {
                     body: JSON.stringify({
                         gemini_api_key: apiKey,
                         max_workers: maxWorkers,
+                        max_labs_workers: maxLabsWorkers,
+                        gen_engine: genEngine,
                         storage_dir: storageDir,
                         veo_model: veoModel,
                         image_model: imageModel,
@@ -1959,24 +2105,67 @@ async function generateViaLabsGoogle(promptText, quality) {
     const voiceCb = document.getElementById("labs-voiceover-checkbox");
     const addVoice = voiceCb ? voiceCb.checked : true;
 
-    showToast(`Đang gửi yêu cầu tạo video qua Labs.google (${qualityVal}${addSub ? ' + Sub' : ''})...`, "info");
+    const aspectRatio = document.getElementById("prompt-aspect-ratio") ? document.getElementById("prompt-aspect-ratio").value : "9:16";
+    const duration = document.getElementById("prompt-duration") ? parseInt(document.getElementById("prompt-duration").value) : 8;
+    const variants = document.getElementById("prompt-variants") ? parseInt(document.getElementById("prompt-variants").value) : 1;
+    const veoModel = document.getElementById("prompt-veo-model") ? document.getElementById("prompt-veo-model").value : "veo-3.1-lite-generate-preview";
+
+    const countEl = document.getElementById("prompt-count");
+    const count = countEl ? (parseInt(countEl.value) || 1) : 1;
+
+    const keepCb = document.getElementById("prompt-keep-context");
+    const keepContext = keepCb ? keepCb.checked : false;
+
+    const customContextInput = document.getElementById("prompt-custom-context");
+    const customContext = customContextInput ? customContextInput.value : "";
+
+    showToast(`Đang gửi yêu cầu sinh ${count} video qua Labs.google (${aspectRatio} | ${duration}s | ${variants}x | ${qualityVal})...`, "info");
     try {
-        const res = await fetch(`${API_BASE}/api/labs-google/generate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                prompt: promptText.trim(),
-                quality: qualityVal,
-                add_subtitle: addSub,
-                add_voiceover: addVoice
-            })
-        });
-        const data = await res.json();
-        if (res.ok) {
-            showToast(`✅ ${data.message}`, "success");
-            fetchJobsAndStats();
+        if (count > 1) {
+            const res = await fetch(`${API_BASE}/api/generate-prompt`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    topic: promptText.trim(),
+                    count: count,
+                    keep_context: keepContext,
+                    custom_context: customContext,
+                    aspect_ratio: aspectRatio,
+                    duration: duration,
+                    variants: variants,
+                    veo_model: veoModel,
+                    quality: qualityVal
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`✅ ${data.message}`, "success");
+                fetchJobsAndStats();
+            } else {
+                showToast(data.detail || "Lỗi sinh batch video", "error");
+            }
         } else {
-            showToast(data.detail || "Lỗi tạo video", "error");
+            const res = await fetch(`${API_BASE}/api/labs-google/generate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    prompt: promptText.trim(),
+                    quality: qualityVal,
+                    aspect_ratio: aspectRatio,
+                    duration: duration,
+                    variants: variants,
+                    veo_model: veoModel,
+                    add_subtitle: addSub,
+                    add_voiceover: addVoice
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`✅ ${data.message}`, "success");
+                fetchJobsAndStats();
+            } else {
+                showToast(data.detail || "Lỗi tạo video", "error");
+            }
         }
     } catch (err) {
         showToast(`Lỗi: ${err.message}`, "error");

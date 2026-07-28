@@ -3,8 +3,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from config.settings import (
     MAX_CONCURRENT_VEO_JOBS,
+    MAX_CONCURRENT_LABS_JOBS,
     MAX_CONCURRENT_PROCESSING,
-    MAX_CONCURRENT_POST_JOBS
+    MAX_CONCURRENT_POST_JOBS,
+    DEFAULT_ASPECT_RATIO,
+    DEFAULT_VEO_DURATION,
+    DEFAULT_VEO_VARIANTS,
+    DEFAULT_VEO_MODEL
 )
 from core.db import DatabaseManager, JobStatus
 from core.script_engine import ScriptEngine
@@ -16,9 +21,8 @@ from publishers.facebook_publisher import FacebookPublisher
 from publishers.tiktok_publisher import TikTokPublisher
 from publishers.x_publisher import XPublisher
 import threading
+import uuid
 logger = logging.getLogger(__name__)
-
-labs_browser_lock = threading.Lock()
 
 class MultiThreadQueueManager:
     """Orchestrates multi-threaded processing pipeline for 100 videos/day target"""
@@ -37,13 +41,33 @@ class MultiThreadQueueManager:
         # Thread Pools for pipeline stages
         self.script_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="ScriptWorker")
         self.veo_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_VEO_JOBS, thread_name_prefix="VeoWorker")
+        self.labs_pool = ThreadPoolExecutor(max_workers=max(1, MAX_CONCURRENT_LABS_JOBS), thread_name_prefix="LabsWorker")
         self.process_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_PROCESSING, thread_name_prefix="RenderWorker")
         self.post_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_POST_JOBS, thread_name_prefix="PostWorker")
+
+        # Dynamic Worker Pool for Multi-Browser Labs Automation
+        self.labs_worker_ids = set(range(1, MAX_CONCURRENT_LABS_JOBS + 1))
+        self.labs_worker_lock = threading.Lock()
+        self.labs_semaphore = threading.BoundedSemaphore(value=max(1, MAX_CONCURRENT_LABS_JOBS))
+
+        # Context Persistence Tracking for keep_context series (Sequential execution in 1 thread)
+        self.active_context_batches = set()
+        self.batch_worker_map = {}
 
         self.is_running = False
         self.active_jobs = set()
         self.last_quota_retry_time = 0
-        self.lock = __import__("threading").Lock()
+        self.lock = threading.Lock()
+
+    def _acquire_labs_worker_id(self) -> int:
+        with self.labs_worker_lock:
+            if self.labs_worker_ids:
+                return self.labs_worker_ids.pop()
+            return 1
+
+    def _release_labs_worker_id(self, worker_id: int):
+        with self.labs_worker_lock:
+            self.labs_worker_ids.add(worker_id)
 
     def _safe_submit(self, pool, func, job_id):
         with self.lock:
@@ -60,9 +84,23 @@ class MultiThreadQueueManager:
 
         pool.submit(wrapped)
 
-    def add_prompt_batch(self, topic: str, count: int = 10, styles: list = None, voices: list = None, keep_context: bool = True, custom_context: str = ""):
+    def add_prompt_batch(
+        self,
+        topic: str,
+        count: int = 10,
+        styles: list = None,
+        voices: list = None,
+        keep_context: bool = True,
+        custom_context: str = "",
+        aspect_ratio: str = "9:16",
+        duration: int = 8,
+        variants: int = 1,
+        veo_model: str = None,
+        quality: str = "1080p"
+    ):
         """Add batch of prompt jobs to queue with selected styles, voices & context persistence"""
-        logger.info(f"Đang sinh {count} kịch bản từ chủ đề: '{topic}' với styles={styles}, voices={voices}, keep_context={keep_context}...")
+        batch_id = f"batch_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+        logger.info(f"Đang sinh {count} kịch bản từ chủ đề: '{topic}' [batch_id={batch_id}] với styles={styles}, voices={voices}, keep_context={keep_context}...")
         scripts = self.script_engine.generate_batch_scripts(topic, count=count, keep_context=keep_context, custom_context=custom_context)
         added_count = 0
         
@@ -73,25 +111,39 @@ class MultiThreadQueueManager:
             assigned_style = valid_styles[idx % len(valid_styles)]
             assigned_voice = valid_voices[idx % len(valid_voices)]
 
-            # Sử dụng trực tiếp topic nhập từ UI làm Veo Prompt
-            veo_prompt = topic.strip()
-            if custom_context:
-                veo_prompt += f", {custom_context}"
-            if assigned_style:
-                veo_prompt += f", {assigned_style} style"
+            # Ưu tiên lấy veo_prompt thông minh được Gemini AI sinh cho từng tập khi keep_context
+            ai_veo_prompt = s.get('veo_prompt', '').strip()
+            if ai_veo_prompt:
+                veo_prompt = ai_veo_prompt
+            else:
+                veo_prompt = topic.strip()
+                if custom_context:
+                    veo_prompt += f", {custom_context}"
+                if assigned_style:
+                    veo_prompt += f", {assigned_style} style"
+
+            from config.settings import DEFAULT_GEN_ENGINE
+            source_type_val = "LABS_PROMPT" if getattr(DEFAULT_GEN_ENGINE, 'lower', lambda: 'labs')() == 'labs' else "PROMPT"
 
             self.db.create_job(
-                source_type="PROMPT",
+                source_type=source_type_val,
                 source_input=topic,
-                title=s.get('title', ''),
+                title=s.get('title', f"Tập {idx+1}: {topic[:30]}"),
                 voiceover_text=s.get('voiceover_text', ''),
                 veo_prompt=veo_prompt,
                 tags=s.get('tags', []),
                 voice=assigned_voice,
-                style=assigned_style
+                style=assigned_style,
+                aspect_ratio=aspect_ratio or DEFAULT_ASPECT_RATIO or "9:16",
+                duration=duration or DEFAULT_VEO_DURATION or 8,
+                variants=variants or DEFAULT_VEO_VARIANTS or 1,
+                veo_model=veo_model or DEFAULT_VEO_MODEL,
+                quality=quality or "1080p",
+                keep_context=keep_context,
+                batch_id=batch_id
             )
             added_count += 1
-        logger.info(f"Đã thêm thành công {added_count} job vào hàng chờ DB!")
+        logger.info(f"Đã thêm thành công {added_count} job vào hàng chờ DB (engine={DEFAULT_GEN_ENGINE})!")
         return added_count
 
     def add_clone_job(self, video_url: str, add_voiceover: bool = True, add_subtitle: bool = True):
@@ -204,21 +256,79 @@ class MultiThreadQueueManager:
             self.db.update_job(job_id, status=JobStatus.READY_TO_POST.value)
 
     def process_labs_google_job(self, job_id: int):
-        """Worker function: Process job using labs.google browser automation with session lock"""
+        """Worker function: Process job using labs.google browser automation with multi-browser parallel & context persistence support"""
         job = self.db.get_job(job_id)
         if not job or job['status'] not in (JobStatus.SCRIPTED.value, JobStatus.PENDING.value):
+            batch_id = job.get('batch_id') if job else None
+            keep_ctx = bool(job.get('keep_context', False)) if job else False
+            if keep_ctx and batch_id:
+                with self.lock:
+                    self.active_context_batches.discard(batch_id)
             return
 
+        batch_id = job.get('batch_id')
+        keep_context = bool(job.get('keep_context', False))
+
         try:
-            from config.settings import GENERATED_DIR
+            from config.settings import (
+                GENERATED_DIR,
+                DEFAULT_ASPECT_RATIO,
+                DEFAULT_VEO_DURATION,
+                DEFAULT_VEO_VARIANTS,
+                DEFAULT_VEO_MODEL
+            )
             self.db.update_job(job_id, status=JobStatus.GENERATING_VEO.value)
             out_raw_path = GENERATED_DIR / f"raw_{job_id}.mp4"
 
             prompt = job.get('veo_prompt') or job.get('source_input') or job.get('title')
-            quality = job.get('quality') or job.get('labs_quality') or '1080p'
-            
-            with labs_browser_lock:
-                ok = self.labs_gen.generate_video(prompt=prompt, out_path=out_raw_path, quality=quality)
+            quality = job.get('quality') or '1080p'
+            aspect_ratio = job.get('aspect_ratio') or DEFAULT_ASPECT_RATIO or "9:16"
+            duration = job.get('duration') or DEFAULT_VEO_DURATION or 8
+            variants = job.get('variants') or DEFAULT_VEO_VARIANTS or 1
+            veo_model = job.get('veo_model') or DEFAULT_VEO_MODEL
+
+            self.labs_semaphore.acquire()
+            worker_id = None
+            if keep_context and batch_id:
+                with self.labs_worker_lock:
+                    if batch_id in self.batch_worker_map:
+                        worker_id = self.batch_worker_map[batch_id]
+
+            if worker_id is None:
+                worker_id = self._acquire_labs_worker_id()
+                if keep_context and batch_id:
+                    with self.labs_worker_lock:
+                        self.batch_worker_map[batch_id] = worker_id
+
+            ok = False
+            try:
+                logger.info(f"Job #{job_id}: Bắt đầu chạy trên Labs Worker #{worker_id} (keep_context={keep_context}, batch={batch_id}) | {aspect_ratio} | {duration}s | {variants}x | Model: {veo_model}")
+                ok = self.labs_gen.generate_video(
+                    prompt=prompt,
+                    out_path=out_raw_path,
+                    aspect_ratio=aspect_ratio,
+                    duration=duration,
+                    variants=variants,
+                    model=veo_model,
+                    quality=quality,
+                    worker_id=worker_id
+                )
+            finally:
+                if keep_context and batch_id:
+                    with self.lock:
+                        self.active_context_batches.discard(batch_id)
+                    remaining = self.db.get_jobs_by_batch(batch_id)
+                    has_remaining = any(r['status'] in (JobStatus.SCRIPTED.value, JobStatus.PENDING.value) and r['id'] != job_id for r in remaining)
+                    if not has_remaining:
+                        with self.labs_worker_lock:
+                            self.batch_worker_map.pop(batch_id, None)
+                            self.labs_worker_ids.add(worker_id)
+                        self.labs_semaphore.release()
+                    else:
+                        self.labs_semaphore.release()
+                else:
+                    self._release_labs_worker_id(worker_id)
+                    self.labs_semaphore.release()
 
             if ok and out_raw_path.exists():
                 self.db.update_job(
@@ -231,6 +341,9 @@ class MultiThreadQueueManager:
                 self.veo_gen.process_veo_job(job_id)
         except Exception as e:
             logger.exception(f"Lỗi LabsGoogle job #{job_id}: {e}")
+            if keep_context and batch_id:
+                with self.lock:
+                    self.active_context_batches.discard(batch_id)
             self.db.update_job(job_id, status=JobStatus.FAILED.value, error_msg=str(e))
 
     def run_worker_cycle(self):
@@ -245,11 +358,25 @@ class MultiThreadQueueManager:
             elif job['source_type'] == 'CLONE':
                 self._safe_submit(self.script_pool, self.cloner.process_clone_job, job['id'])
 
-        # 2. Process SCRIPTED Jobs -> Veo API or Labs Google Browser Automation
-        scripted_jobs = self.db.get_jobs_by_status(JobStatus.SCRIPTED, limit=MAX_CONCURRENT_VEO_JOBS)
+        # 2. Process SCRIPTED Jobs -> Veo API or Labs Google Browser Automation (Multi-Browser)
+        scripted_jobs = self.db.get_jobs_by_status(JobStatus.SCRIPTED, limit=20)
+        from config.settings import DEFAULT_GEN_ENGINE, GEMINI_API_KEY
         for job in scripted_jobs:
-            if job.get('source_type') == 'LABS_PROMPT':
-                self._safe_submit(self.veo_pool, self.process_labs_google_job, job['id'])
+            use_labs = (
+                job.get('source_type') == 'LABS_PROMPT' or
+                getattr(DEFAULT_GEN_ENGINE, 'lower', lambda: 'labs')() == 'labs' or
+                not (GEMINI_API_KEY and GEMINI_API_KEY.strip())
+            )
+            if use_labs:
+                keep_ctx = bool(job.get('keep_context', False))
+                b_id = job.get('batch_id')
+                if keep_ctx and b_id:
+                    with self.lock:
+                        if b_id in self.active_context_batches:
+                            # Tập trước trong cùng chuỗi batch keep_context này đang chạy. Chờ tập trước chạy xong!
+                            continue
+                        self.active_context_batches.add(b_id)
+                self._safe_submit(self.labs_pool, self.process_labs_google_job, job['id'])
             else:
                 self._safe_submit(self.veo_pool, self.veo_gen.process_veo_job, job['id'])
 
@@ -296,5 +423,6 @@ class MultiThreadQueueManager:
         self.is_running = False
         self.script_pool.shutdown(wait=False)
         self.veo_pool.shutdown(wait=False)
+        self.labs_pool.shutdown(wait=False)
         self.process_pool.shutdown(wait=False)
         self.post_pool.shutdown(wait=False)

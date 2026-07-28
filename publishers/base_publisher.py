@@ -37,10 +37,11 @@ class BasePublisher:
         self.session_dir = session_dir
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
-    def kill_orphaned_chrome(self):
-        """Kill background chrome.exe processes locking this session_dir"""
+    def kill_orphaned_chrome(self, target_dir: Path = None):
+        """Kill background chrome.exe processes locking session_dir"""
         try:
-            norm_dir = str(self.session_dir.resolve()).lower().replace("/", "\\")
+            dir_to_check = target_dir or self.session_dir
+            norm_dir = str(dir_to_check.resolve()).lower().replace("/", "\\")
             cmd = [
                 "powershell", "-NoProfile", "-Command",
                 f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' or Name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{norm_dir}*' }} | Stop-Process -Force"
@@ -49,12 +50,34 @@ class BasePublisher:
         except Exception as e:
             logger.warning(f"[{self.platform_name}] Lỗi check orphan Chrome: {e}")
 
-    def get_browser_context(self, p, headless: bool = False, hidden: bool = True) -> BrowserContext:
+    def prepare_worker_session_dir(self, worker_id: int) -> Path:
+        """Create an isolated worker session directory cloned from main session_dir."""
+        if worker_id <= 0:
+            return self.session_dir
+        worker_dir = self.session_dir.parent / f"{self.session_dir.name}_workers" / f"worker_{worker_id}"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            if self.session_dir.exists():
+                for item in self.session_dir.iterdir():
+                    if item.name in ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
+                        continue
+                    dest = worker_dir / item.name
+                    if not dest.exists():
+                        if item.is_dir():
+                            shutil.copytree(item, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns("Singleton*", "lockfile*"))
+                        else:
+                            shutil.copy2(item, dest)
+        except Exception as ex:
+            logger.warning(f"[{self.platform_name}] Lỗi sync worker session #{worker_id}: {ex}")
+        return worker_dir
+
+    def get_browser_context(self, p, headless: bool = False, hidden: bool = True, session_dir: Path = None) -> BrowserContext:
         """Get persistent browser context for automated posting (hidden background browser)."""
-        self.kill_orphaned_chrome()
+        target_dir = session_dir or self.session_dir
+        self.kill_orphaned_chrome(target_dir)
         # Tự động xóa lock files còn sót từ phiên trước
         for lock_name in ["SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]:
-            l_path = self.session_dir / lock_name
+            l_path = target_dir / lock_name
             if l_path.exists():
                 try:
                     l_path.unlink()
@@ -62,7 +85,7 @@ class BasePublisher:
                     pass
 
         kwargs = {
-            "user_data_dir": str(self.session_dir),
+            "user_data_dir": str(target_dir),
             "ignore_default_args": ["--enable-automation", "--password-store=basic", "--disable-component-extensions-with-background-pages"]
         }
         if os.path.exists(r"C:\Program Files\Google\Chrome\Application\chrome.exe") or os.path.exists(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"):
