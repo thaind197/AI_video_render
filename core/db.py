@@ -76,6 +76,18 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN add_subtitle INTEGER DEFAULT 1")
             if 'quality' not in cols:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN quality TEXT DEFAULT '1080p'")
+            if 'aspect_ratio' not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN aspect_ratio TEXT DEFAULT '9:16'")
+            if 'duration' not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN duration INTEGER DEFAULT 8")
+            if 'variants' not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN variants INTEGER DEFAULT 1")
+            if 'veo_model' not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN veo_model TEXT")
+            if 'keep_context' not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN keep_context INTEGER DEFAULT 0")
+            if 'batch_id' not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN batch_id TEXT")
             conn.commit()
 
             # fb_post_logs: track per-profile posting per job
@@ -104,19 +116,37 @@ class DatabaseManager:
             )
             """)
             conn.commit()
-            conn.commit()
 
-    def create_job(self, source_type: str, source_input: str, title: str = "", voiceover_text: str = "", veo_prompt: str = "", tags: list = None, voice: str = "vi-VN-HoaiMyNeural", style: str = "cinematic", add_voiceover: bool = True, add_subtitle: bool = True, quality: str = "1080p") -> int:
+    def create_job(
+        self,
+        source_type: str,
+        source_input: str,
+        title: str = "",
+        voiceover_text: str = "",
+        veo_prompt: str = "",
+        tags: list = None,
+        voice: str = "vi-VN-HoaiMyNeural",
+        style: str = "cinematic",
+        add_voiceover: bool = True,
+        add_subtitle: bool = True,
+        quality: str = "1080p",
+        aspect_ratio: str = "9:16",
+        duration: int = 8,
+        variants: int = 1,
+        veo_model: str = None,
+        keep_context: bool = False,
+        batch_id: str = None
+    ) -> int:
         now = datetime.now().isoformat()
         tags_str = json.dumps(tags or [], ensure_ascii=False)
         status = JobStatus.SCRIPTED.value if veo_prompt else JobStatus.PENDING.value
-        
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO jobs (source_type, source_input, title, voiceover_text, veo_prompt, tags, voice, style, add_voiceover, add_subtitle, quality, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (source_type, source_input, title, voiceover_text, veo_prompt, tags_str, voice, style, int(add_voiceover), int(add_subtitle), quality, status, now, now))
+            INSERT INTO jobs (source_type, source_input, title, voiceover_text, veo_prompt, tags, voice, style, add_voiceover, add_subtitle, quality, aspect_ratio, duration, variants, veo_model, keep_context, batch_id, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (source_type, source_input, title, voiceover_text, veo_prompt, tags_str, voice, style, int(add_voiceover), int(add_subtitle), quality, aspect_ratio, duration, variants, veo_model, int(keep_context), batch_id, status, now, now))
             conn.commit()
             return cursor.lastrowid
 
@@ -177,6 +207,13 @@ class DatabaseManager:
             cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def get_jobs_by_batch(self, batch_id: str) -> list:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM jobs WHERE batch_id = ? ORDER BY id ASC", (batch_id,))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
 
     def get_statistics(self) -> dict:
         with self._get_connection() as conn:

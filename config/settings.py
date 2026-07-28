@@ -54,10 +54,18 @@ except ValueError:
 # If True: only use the chosen DEFAULT_VEO_MODEL, no fallback to other models (matches Labs.google exact model selection)
 DEFAULT_VEO_STRICT_MODEL = os.getenv("DEFAULT_VEO_STRICT_MODEL", "true").lower() == "true"
 
+# Default video generation engine ('labs' for Playwright Chrome automation, 'veo_api' for official Gemini API)
+DEFAULT_GEN_ENGINE = os.getenv("DEFAULT_GEN_ENGINE", "labs")
+
 try:
     MAX_CONCURRENT_VEO_JOBS = int(os.getenv("MAX_CONCURRENT_VEO_JOBS", "5"))
 except ValueError:
     MAX_CONCURRENT_VEO_JOBS = 5
+
+try:
+    MAX_CONCURRENT_LABS_JOBS = int(os.getenv("MAX_CONCURRENT_LABS_JOBS", "3"))
+except ValueError:
+    MAX_CONCURRENT_LABS_JOBS = 3
 
 MAX_CONCURRENT_POST_JOBS = 2     # Maximum parallel browser uploads (avoid rate limit)
 MAX_CONCURRENT_PROCESSING = 4    # Maximum parallel FFmpeg video renders
@@ -80,7 +88,7 @@ for sess_folder in [FACEBOOK_SESSION_DIR, FACEBOOK_PROFILES_DIR, TIKTOK_SESSION_
     sess_folder.mkdir(parents=True, exist_ok=True)
 
 def reload_settings():
-    global GEMINI_API_KEY, MAX_CONCURRENT_VEO_JOBS, FINAL_DIR, STORAGE_DIR
+    global GEMINI_API_KEY, MAX_CONCURRENT_VEO_JOBS, MAX_CONCURRENT_LABS_JOBS, FINAL_DIR, STORAGE_DIR
     global DEFAULT_VEO_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_ASPECT_RATIO, REQUIRE_CONFIRMATION
     global DEFAULT_VEO_DURATION, DEFAULT_VEO_VARIANTS, DEFAULT_VEO_STRICT_MODEL
     load_dotenv(BASE_DIR / ".env", override=True)
@@ -104,6 +112,10 @@ def reload_settings():
         MAX_CONCURRENT_VEO_JOBS = int(os.getenv("MAX_CONCURRENT_VEO_JOBS", "5"))
     except ValueError:
         MAX_CONCURRENT_VEO_JOBS = 5
+    try:
+        MAX_CONCURRENT_LABS_JOBS = int(os.getenv("MAX_CONCURRENT_LABS_JOBS", "3"))
+    except ValueError:
+        MAX_CONCURRENT_LABS_JOBS = 3
 
     custom_storage = os.getenv("CUSTOM_STORAGE_DIR", "")
     if custom_storage:
@@ -117,6 +129,7 @@ def reload_settings():
 def update_env_settings(
     api_key: str = None,
     max_workers: int = None,
+    max_labs_workers: int = None,
     storage_dir: str = None,
     veo_model: str = None,
     image_model: str = None,
@@ -125,6 +138,7 @@ def update_env_settings(
     veo_duration: int = None,
     veo_variants: int = None,
     veo_strict_model: bool = None,
+    gen_engine: str = None,
     **kwargs
 ):
     env_path = BASE_DIR / ".env"
@@ -144,6 +158,14 @@ def update_env_settings(
     if max_workers is not None:
         env_vars["MAX_CONCURRENT_VEO_JOBS"] = str(max_workers)
         os.environ["MAX_CONCURRENT_VEO_JOBS"] = str(max_workers)
+
+    if max_labs_workers is not None:
+        env_vars["MAX_CONCURRENT_LABS_JOBS"] = str(max_labs_workers)
+        os.environ["MAX_CONCURRENT_LABS_JOBS"] = str(max_labs_workers)
+
+    if gen_engine is not None and gen_engine.strip():
+        env_vars["DEFAULT_GEN_ENGINE"] = gen_engine.strip()
+        os.environ["DEFAULT_GEN_ENGINE"] = gen_engine.strip()
 
     if storage_dir is not None and storage_dir.strip():
         env_vars["CUSTOM_STORAGE_DIR"] = storage_dir.strip()

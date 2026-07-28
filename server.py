@@ -64,6 +64,11 @@ class PromptBatchRequest(BaseModel):
     voices: list[str] = ["vi-VN-HoaiMyNeural"]
     keep_context: bool = True
     custom_context: str = ""
+    aspect_ratio: str = "9:16"
+    duration: int = 8
+    variants: int = 1
+    veo_model: str = "veo-3.1-lite-generate-preview"
+    quality: str = "1080p"
 
 class CloneVideoRequest(BaseModel):
     url: str
@@ -82,6 +87,8 @@ from config.settings import update_env_settings, reload_settings
 class SettingsUpdateRequest(BaseModel):
     gemini_api_key: str = None
     max_workers: int = 5
+    max_labs_workers: int = 3
+    gen_engine: str = "labs"
     storage_dir: str = None
     veo_model: str = "veo-3.1-lite-generate-preview"
     image_model: str = "imagen-3.0-generate-002"
@@ -98,6 +105,10 @@ class LabsGoogleGenerateRequest(BaseModel):
     prompt: str
     title: str = ""
     quality: str = "1080p"
+    aspect_ratio: str = "9:16"
+    duration: int = 8
+    variants: int = 1
+    veo_model: str = "veo-3.1-lite-generate-preview"
     add_subtitle: bool = True
     add_voiceover: bool = True
 
@@ -265,6 +276,8 @@ def get_settings():
         "data": {
             "gemini_api_key": cfg.GEMINI_API_KEY,
             "max_workers": cfg.MAX_CONCURRENT_VEO_JOBS,
+            "max_labs_workers": getattr(cfg, 'MAX_CONCURRENT_LABS_JOBS', 3),
+            "gen_engine": getattr(cfg, 'DEFAULT_GEN_ENGINE', 'labs'),
             "storage_dir": str(cfg.FINAL_DIR),
             "veo_model": cfg.DEFAULT_VEO_MODEL,
             "image_model": cfg.DEFAULT_IMAGE_MODEL,
@@ -285,6 +298,8 @@ def update_settings(req: SettingsUpdateRequest):
         update_env_settings(
             api_key=req.gemini_api_key,
             max_workers=req.max_workers,
+            max_labs_workers=req.max_labs_workers,
+            gen_engine=req.gen_engine,
             storage_dir=req.storage_dir,
             veo_model=req.veo_model,
             image_model=req.image_model,
@@ -331,7 +346,12 @@ def generate_prompt_batch(req: PromptBatchRequest, background_tasks: BackgroundT
             styles=req.styles,
             voices=req.voices,
             keep_context=req.keep_context,
-            custom_context=req.custom_context.strip()
+            custom_context=req.custom_context.strip(),
+            aspect_ratio=req.aspect_ratio,
+            duration=req.duration,
+            variants=req.variants,
+            veo_model=req.veo_model,
+            quality=req.quality
         )
 
     background_tasks.add_task(_create)
@@ -487,6 +507,10 @@ def labs_google_generate(req: LabsGoogleGenerateRequest):
         title=req.title.strip() or req.prompt.strip()[:50],
         veo_prompt=req.prompt.strip(),
         quality=quality,
+        aspect_ratio=req.aspect_ratio,
+        duration=req.duration,
+        variants=req.variants,
+        veo_model=req.veo_model,
         add_subtitle=req.add_subtitle,
         add_voiceover=req.add_voiceover
     )
