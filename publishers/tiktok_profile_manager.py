@@ -202,7 +202,7 @@ class TikTokProfileManager:
         logger.info(f"[TikTokProfileManager] Mở browser đăng nhập TikTok: {profile['name']}")
 
         self._set_login_status(profile_id, False)
-        pub.interactive_login("https://www.tiktok.com/upload")
+        pub.interactive_login("https://www.tiktok.com/login?lang=vi-VN")
 
         if check_session_has_cookies(session_dir):
             self._set_login_status(profile_id, True)

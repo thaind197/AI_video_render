@@ -4,7 +4,7 @@ Veo Studio AI PRO - Version & Remote Update Checker
 import logging
 from typing import Dict, Any
 
-__version__ = "2.5.2"
+__version__ = "2.5.3"
 APP_NAME = "Veo Studio AI PRO"
 FULL_NAME = f"{APP_NAME} v{__version__}"
 

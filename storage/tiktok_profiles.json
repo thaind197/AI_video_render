@@ -5,24 +5,6 @@
       "name": "Mặc Định",
       "created_at": "2026-07-27T01:35:14.133404",
       "logged_in": false
-    },
-    {
-      "id": "2344513c",
-      "name": "account8_tiktok",
-      "created_at": "2026-07-27T01:42:09.130730",
-      "logged_in": false
-    },
-    {
-      "id": "3db4a702",
-      "name": "account9_tiktok",
-      "created_at": "2026-07-27T01:42:09.860804",
-      "logged_in": false
-    },
-    {
-      "id": "ad03846c",
-      "name": "account10_tiktok",
-      "created_at": "2026-07-27T01:49:05.364476",
-      "logged_in": false
     }
   ]
 }

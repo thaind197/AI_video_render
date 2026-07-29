@@ -67,7 +67,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 VERSION_CHECK_SKIP = {"/api/version", "/api/remote-config", "/api/remote-config/refresh",
-                      "/api/settings", "/api/statistics", "/api/jobs", "/api/social/status"}
+                      "/api/settings", "/api/statistics", "/api/jobs", "/api/social/status", "/api/labs-google/status"}
 
 class VersionCheckMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):

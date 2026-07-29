@@ -352,17 +352,38 @@ class LabsGoogleGenerator(BasePublisher):
                 logger.info(f"[LabsGoogle] Đã nhập prompt thành công: '{prompt[:50]}...'")
                 self._screenshot(page, "labs_02_prompt_entered")
 
-                # Step 4: Submit prompt by pressing Enter
+                # Step 4: Submit prompt by pressing Enter & Click Submit Button if available
                 logger.info("[LabsGoogle] Nhấn phím Enter để gửi prompt...")
                 page.keyboard.press("Enter")
                 time.sleep(1.0)
                 page.keyboard.press("Enter")
 
+                # Backup: Tìm và click nút Generate/Tạo/Arrow gửi prompt nếu có
+                submit_selectors = [
+                    "button[aria-label*='Tạo' i]",
+                    "button[aria-label*='Generate' i]",
+                    "button[aria-label*='Create' i]",
+                    "button[aria-label*='Send' i]",
+                    "button:has-text('Tạo')",
+                    "button:has-text('Generate')",
+                    "button:has-text('Create')",
+                    "button[type='submit']"
+                ]
+                for s_sel in submit_selectors:
+                    try:
+                        s_btn = page.locator(s_sel).first
+                        if s_btn.is_visible(timeout=1000):
+                            s_btn.click()
+                            logger.info(f"[LabsGoogle] Clicked submit button: '{s_sel}'")
+                            break
+                    except Exception:
+                        pass
+
                 logger.info("[LabsGoogle] Đã gửi yêu cầu sinh video. Đang chờ 50 giây cho Google Labs render hoàn tất...")
                 self._screenshot(page, "labs_03_generating")
                 time.sleep(50)
 
-                # Step 5: Wait for generated video & download via 3-dots menu -> Tải xuống -> 1080p
+                # Step 5: Wait for generated video & download via 3-dots menu -> Tải xuống / Download -> 1080p
                 start_time = time.time()
                 video_downloaded = False
 
@@ -383,6 +404,47 @@ class LabsGoogleGenerator(BasePublisher):
                     if download_info and out_path.exists() and out_path.stat().st_size > 100000:
                         video_downloaded = True
                         break
+
+                    # 0. Tự động phát hiện & đóng Popup/Modal đè màn hình (Overlay / Detail Picker Popup)
+                    try:
+                        overlay_selectors = [
+                            "[role='dialog']",
+                            "div:has-text('Thêm vào câu lệnh')",
+                            "div:has-text('Tìm kiếm thành phần')",
+                            "div:has-text('Tải nội dung nghe nhìn lên')"
+                        ]
+                        has_overlay = False
+                        for o_sel in overlay_selectors:
+                            try:
+                                if page.locator(o_sel).first.is_visible(timeout=500):
+                                    has_overlay = True
+                                    break
+                            except Exception:
+                                pass
+
+                        if has_overlay:
+                            logger.info("[LabsGoogle] ⚠️ Phát hiện Popup/Modal đè màn hình, tiến hành bấm Escape & đóng...")
+                            # Phím Escape đóng modal
+                            page.keyboard.press("Escape")
+                            time.sleep(0.3)
+                            page.keyboard.press("Escape")
+
+                            # Click nút đóng X nếu có
+                            try:
+                                close_btns = page.locator("button[aria-label*='Đóng' i], button[aria-label*='Close' i], button[aria-label*='dismiss' i], [role='dialog'] button:has-text('×'), [role='dialog'] button:has-text('✕')")
+                                if close_btns.count() > 0 and close_btns.first.is_visible(timeout=500):
+                                    close_btns.first.click(force=True)
+                            except Exception:
+                                pass
+
+                            # Click ra góc màn hình ngoài backdrop
+                            try:
+                                page.mouse.click(20, 20)
+                            except Exception:
+                                pass
+                            time.sleep(0.8)
+                    except Exception as ex_ov:
+                        logger.warning(f"[LabsGoogle] Lỗi xử lý overlay popup: {ex_ov}")
 
                     try:
                         # 1. Tìm khung chứa video card mới nhất trên màn hình
@@ -410,7 +472,7 @@ class LabsGoogleGenerator(BasePublisher):
                                 b_elem = cand_btns.nth(b_idx)
                                 b_aria = (b_elem.get_attribute("aria-label") or "").lower()
                                 b_text = (b_elem.text_content() or "").lower()
-                                if "khác" in b_aria or "more" in b_aria or "more_vert" in b_text or "..." in b_text or "⋮" in b_text:
+                                if "khác" in b_aria or "more" in b_aria or "more_vert" in b_text or "..." in b_text or "⋮" in b_text or "download" in b_aria or "download" in b_text or "tải" in b_aria or "tải" in b_text:
                                     three_dots_btn = b_elem
                                     logger.info(f"[LabsGoogle] Đã tìm thấy nút 3 chấm qua text/aria: {b_aria or b_text}")
                                     break
@@ -433,20 +495,26 @@ class LabsGoogleGenerator(BasePublisher):
                                 except Exception as ex_c:
                                     logger.warning(f"[LabsGoogle] Lỗi click nút 3 chấm: {ex_c}")
 
-                                # 3. Tìm DOM element 'Tải xuống' bằng get_by_text, get_by_role & role=menuitem
+                                # 3. Tìm DOM element 'Tải xuống' / 'Download' hỗ trợ cả Tiếng Việt & Tiếng Anh
                                 dl_menu_item = None
                                 try:
-                                    cand1 = page.get_by_text("Tải xuống", exact=False)
-                                    if cand1.count() > 0 and cand1.first.is_visible(timeout=1500):
-                                        dl_menu_item = cand1.first
-                                    else:
-                                        cand2 = page.get_by_role("menuitem").filter(has_text="Tải xuống")
-                                        if cand2.count() > 0 and cand2.first.is_visible(timeout=1500):
-                                            dl_menu_item = cand2.first
-                                        else:
-                                            cand3 = page.locator("[role='menuitem']:has-text('Tải xuống'), li:has-text('Tải xuống'), div:has-text('Tải xuống'), span:has-text('Tải xuống')")
-                                            if cand3.count() > 0 and cand3.first.is_visible(timeout=1500):
-                                                dl_menu_item = cand3.first
+                                    dl_selectors = [
+                                        "text=/Tải xuống|Download|Export/i",
+                                        "[role='menuitem']:has-text('Tải xuống')",
+                                        "[role='menuitem']:has-text('Download')",
+                                        "[role='menuitem']:has-text('Export')",
+                                        "li:has-text('Tải xuống')",
+                                        "li:has-text('Download')",
+                                        "div:has-text('Tải xuống')",
+                                        "div:has-text('Download')",
+                                        "span:has-text('Tải xuống')",
+                                        "span:has-text('Download')"
+                                    ]
+                                    for dl_sel in dl_selectors:
+                                        cand = page.locator(dl_sel)
+                                        if cand.count() > 0 and cand.first.is_visible(timeout=1000):
+                                            dl_menu_item = cand.first
+                                            break
                                 except Exception as ex_dl_find:
                                     logger.warning(f"[LabsGoogle] Lỗi tìm DOM element Tải xuống: {ex_dl_find}")
 
