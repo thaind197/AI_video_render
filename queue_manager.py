@@ -329,12 +329,13 @@ class MultiThreadQueueManager:
                         with self.labs_worker_lock:
                             self.batch_worker_map.pop(batch_id, None)
                             self.labs_worker_ids.add(worker_id)
-                        self.labs_semaphore.release()
-                    else:
-                        self.labs_semaphore.release()
                 else:
                     self._release_labs_worker_id(worker_id)
+                
+                try:
                     self.labs_semaphore.release()
+                except ValueError:
+                    pass
 
             if ok and out_raw_path.exists():
                 self.db.update_job(

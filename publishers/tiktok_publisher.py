@@ -26,7 +26,7 @@ class TikTokPublisher(BasePublisher):
             self._profile_id = "default"
 
     def login_manual(self):
-        self.interactive_login("https://www.tiktok.com/upload")
+        self.interactive_login("https://www.tiktok.com/login?lang=vi-VN")
 
     def post_video(self, video_path: Path, caption: str, tags: list = None) -> bool:
         if not video_path.exists():
