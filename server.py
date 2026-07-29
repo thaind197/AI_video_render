@@ -20,6 +20,7 @@ from publishers.facebook_publisher import FacebookPublisher
 from publishers.tiktok_publisher import TikTokPublisher
 from publishers.x_publisher import XPublisher
 from version import __version__, APP_NAME, FULL_NAME, check_remote_version
+from remote_config import get_remote_config_manager
 
 logger = logging.getLogger("FastAPIServer")
 
@@ -59,6 +60,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Version Check Middleware ─────────────────────────────────────────────
+# Tự động kiểm tra Remote Config cho mọi POST/PUT/DELETE request tới /api/
+# Nếu app bị block (version cũ, kill switch, maintenance) → trả 403
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+VERSION_CHECK_SKIP = {"/api/version", "/api/remote-config", "/api/remote-config/refresh",
+                      "/api/settings", "/api/statistics", "/api/jobs", "/api/social/status"}
+
+class VersionCheckMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.url.path.rstrip("/")
+        method = request.method.upper()
+        if method in ("POST", "PUT", "DELETE") and path.startswith("/api") and path not in VERSION_CHECK_SKIP:
+            try:
+                mgr = get_remote_config_manager()
+                status_info = mgr.check_app_status()
+                if status_info.get("is_blocked"):
+                    reason = status_info.get("block_reason", "Ứng dụng bị khóa từ xa.")
+                    return JSONResponse(status_code=403, content={"detail": reason, "is_blocked": True})
+            except Exception as e:
+                logger.warning(f"Version check middleware error: {e}")
+        return await call_next(request)
+
+app.add_middleware(VersionCheckMiddleware)
+
 @app.get("/api/version")
 def get_version():
     remote_data = check_remote_version()
@@ -91,13 +118,11 @@ def refresh_remote_config():
     }
 
 def verify_app_not_blocked(feature_name: str = None):
+    """Kiểm tra feature flag cụ thể (version check đã xử lý bởi middleware)."""
     mgr = get_remote_config_manager()
-    status_info = mgr.check_app_status()
-    if status_info.get("is_blocked"):
-        reason = status_info.get("block_reason", "Ứng dụng bị khóa từ xa.")
-        raise HTTPException(status_code=403, detail=reason)
     if feature_name and not mgr.is_feature_enabled(feature_name):
         raise HTTPException(status_code=403, detail=f"Tính năng '{feature_name}' tạm thời bị vô hiệu hóa từ xa bởi Quản trị viên.")
+
 
 
 

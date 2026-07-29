@@ -3,6 +3,34 @@ const API_BASE = ""; // Same origin / Relative path
 let currentJobs = [];
 let isEngineRunning = false;
 
+// ── Global Fetch Interceptor: bắt 403 is_blocked từ middleware ──────────
+// Khi version cũ, mọi POST/PUT/DELETE request sẽ bị middleware trả 403.
+// Interceptor này tự động hiện modal "Yêu cầu cập nhật" thay vì lỗi generic.
+const _originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    const response = await _originalFetch.apply(this, args);
+    if (response.status === 403) {
+        try {
+            const cloned = response.clone();
+            const body = await cloned.json();
+            if (body && body.is_blocked) {
+                // Fetch version info để hiện modal đầy đủ
+                try {
+                    const vRes = await _originalFetch(`${API_BASE}/api/version`);
+                    const vData = await vRes.json();
+                    if (vData && vData.remote) {
+                        showBlockedVersionModal(vData.remote);
+                    }
+                } catch(e) {
+                    // Fallback: hiện thông báo từ detail
+                    antd.message.error(body.detail || "Ứng dụng bị khóa. Vui lòng cập nhật phiên bản mới.");
+                }
+            }
+        } catch(e) { /* ignore parse errors */ }
+    }
+    return response;
+};
+
 function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -2214,52 +2242,78 @@ window.generateViaLabsGoogle = generateViaLabsGoogle;
 
 async function fetchAppVersion() {
     try {
-        const res = await fetch(`${API_BASE}/api/version`);
+        const res = await _originalFetch(`${API_BASE}/api/version`);
         const data = await res.json();
         if (data && data.version) {
             const badge = document.getElementById("app-version-badge");
-            if (badge) {
+            if (badge && !document.getElementById("blocked-version-modal")) {
                 badge.innerText = `PRO v${data.version}`;
             }
         }
         if (data && data.remote) {
             if (data.remote.is_blocked) {
                 showBlockedVersionModal(data.remote);
-            } else if (data.remote.is_update_available) {
-                showUpdateAvailableBadge(data.remote);
+                return true; // blocked
+            } else {
+                // Nếu trước đó bị block nhưng giờ OK → xóa modal
+                const oldModal = document.getElementById("blocked-version-modal");
+                if (oldModal) oldModal.remove();
+                if (data.remote.is_update_available) {
+                    showUpdateAvailableBadge(data.remote);
+                }
             }
         }
     } catch (e) {
         console.warn("Could not fetch app version:", e);
     }
+    return false;
 }
 
 function showBlockedVersionModal(remote) {
-    let modal = document.getElementById("blocked-version-modal");
-    if (!modal) {
-        modal = document.createElement("div");
-        modal.id = "blocked-version-modal";
-        modal.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.92);z-index:999999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);font-family:Inter,sans-serif;";
-        document.body.appendChild(modal);
-    }
+    // Nếu modal đã hiện rồi thì không tạo lại
+    if (document.getElementById("blocked-version-modal")) return;
+
+    const modal = document.createElement("div");
+    modal.id = "blocked-version-modal";
+    modal.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.95);z-index:999999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(12px);font-family:Inter,sans-serif;";
+
+    // Chặn mọi thao tác: click, keyboard, scroll
+    modal.addEventListener("click", e => e.stopPropagation());
+    modal.addEventListener("keydown", e => { e.preventDefault(); e.stopPropagation(); });
+
     const msg = remote.update_message || "Phiên bản bạn đang dùng đã hết hạn. Vui lòng cập nhật phiên bản mới nhất để tiếp tục sử dụng.";
     const downloadUrl = remote.download_url || "#";
+    const remoteVer = remote.remote_version || remote.min_version || "?";
+
     modal.innerHTML = `
-        <div style="background:#1f1f1f;border:2px solid #ff4d4f;border-radius:16px;padding:36px;max-width:540px;width:90%;text-align:center;box-shadow:0 20px 50px rgba(255,77,79,0.3);color:#fff;">
+        <div style="background:#1f1f1f;border:2px solid #ff4d4f;border-radius:16px;padding:40px;max-width:540px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(255,77,79,0.4);color:#fff;animation:fadeInUp 0.4s ease-out;">
             <div style="width:70px;height:70px;background:rgba(255,77,79,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:#ff4d4f;font-size:32px;">
                 <i class="fa-solid fa-triangle-exclamation"></i>
             </div>
-            <h2 style="color:#ff4d4f;margin:0 0 12px;font-size:22px;font-weight:700;">YÊU CẦU CẬP NHẬT PHIÊN BẢN MỚI</h2>
+            <h2 style="color:#ff4d4f;margin:0 0 12px;font-size:22px;font-weight:700;">ỨNG DỤNG ĐÃ BỊ VÔ HIỆU HÓA</h2>
             <p style="color:#d9d9d9;font-size:14px;line-height:1.6;margin-bottom:20px;">${escapeHtml(msg)}</p>
-            <div style="background:rgba(255,255,255,0.05);padding:12px;border-radius:8px;margin-bottom:24px;font-size:13px;color:#aaa;display:flex;justify-content:space-around;">
+            <div style="background:rgba(255,255,255,0.05);padding:14px;border-radius:8px;margin-bottom:24px;font-size:13px;color:#aaa;display:flex;justify-content:space-around;">
                 <span>Phiên bản hiện tại: <strong style="color:#fff;">v${remote.current_version}</strong></span>
-                <span>Yêu cầu tối thiểu: <strong style="color:#ff4d4f;">v${remote.min_version}</strong></span>
+                <span>Yêu cầu tối thiểu: <strong style="color:#ff4d4f;">v${remoteVer}</strong></span>
             </div>
-            <a href="${downloadUrl}" target="_blank" class="ant-btn ant-btn-primary ant-btn-lg" style="background:#ff4d4f;border-color:#ff4d4f;font-weight:600;width:100%;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-size:15px;">
+            <a href="${downloadUrl}" target="_blank" class="ant-btn ant-btn-primary ant-btn-lg" style="background:#ff4d4f;border-color:#ff4d4f;font-weight:600;width:100%;height:46px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-size:15px;border-radius:8px;">
                 <i class="fa-solid fa-download"></i> TẢI BẢN CẬP NHẬT MỚI NGAY
             </a>
+            <p style="color:#666;font-size:11px;margin-top:16px;">Bạn không thể sử dụng ứng dụng cho đến khi cập nhật phiên bản mới.</p>
         </div>
     `;
+
+    document.body.appendChild(modal);
+
+    // Chặn keyboard toàn cục
+    document.addEventListener("keydown", _blockAllKeys, true);
+}
+
+function _blockAllKeys(e) {
+    if (document.getElementById("blocked-version-modal")) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
 }
 
 function showUpdateAvailableBadge(remote) {
@@ -2273,6 +2327,16 @@ function showUpdateAvailableBadge(remote) {
 // ── Auto-load profiles & version khi trang web load ───────────────────
 document.addEventListener("DOMContentLoaded", () => {
     fetchAppVersion();
+
+    // ── Periodic Version Check: kiểm tra Firebase mỗi 30 giây ─────────
+    // Khi admin sửa Remote Config → user bị block trong vòng 30s
+    setInterval(async () => {
+        try {
+            // Force server refresh cache trước
+            await _originalFetch(`${API_BASE}/api/remote-config/refresh`, { method: "POST" });
+        } catch(e) {}
+        await fetchAppVersion();
+    }, 30000);
 
     const socialNav = document.querySelector('[data-tab="social"]');
     if (socialNav) {

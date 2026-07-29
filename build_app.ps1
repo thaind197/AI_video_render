@@ -35,7 +35,8 @@ foreach ($cmd in $candidates) {
             $pythonVersion = $ver
             break
         }
-    } catch {}
+    }
+    catch {}
 }
 
 if (-not $PythonExe) {
@@ -84,14 +85,16 @@ if (-not $IsccExe) {
     try {
         $whereIscc = where.exe iscc 2>$null
         if ($whereIscc) { $IsccExe = $whereIscc }
-    } catch {}
+    }
+    catch {}
 }
 
 if ($IsccExe -and (Test-Path "$ScriptDir\installer.iss")) {
     Write-Host "  -> Tim thay Inno Setup Compiler tại: $IsccExe" -ForegroundColor Gray
     Write-Host "  -> Dang bien dich installer.iss..." -ForegroundColor Gray
     & $IsccExe "$ScriptDir\installer.iss"
-} else {
+}
+else {
     Write-Host "  [CANH BAO] Khong tim thay Inno Setup Compiler (ISCC.exe). Se giu nguyen thu muc portable dist\VeoStudioAI" -ForegroundColor Yellow
 }
 
@@ -108,3 +111,31 @@ if (Test-Path $installerPath) {
     Write-Host "  (Ban co the bam double-click vao file nay de cai dat thang len Windows)" -ForegroundColor Gray
 }
 Write-Host "=========================================================`n" -ForegroundColor Green
+$versionLine = Select-String -Path "$ScriptDir\version.py" -Pattern '__version__\s*=\s*"([^"]+)"' | Select-Object -First 1
+$appVersion = "unknown"
+if ($versionLine) {
+    $appVersion = $versionLine.Matches[0].Groups[1].Value
+}
+
+$installerPath = "$ScriptDir\dist\VeoStudioAI_Setup_v$appVersion.exe"
+
+Write-Host ""
+Write-Host "=========================================================" -ForegroundColor Green
+Write-Host "   BUILD THANH CONG!                                      " -ForegroundColor Green
+Write-Host "=========================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Version    : v$appVersion" -ForegroundColor Cyan
+Write-Host "  Portable   : $ScriptDir\dist\VeoStudioAI\" -ForegroundColor White
+
+if (Test-Path $installerPath) {
+    $size = [math]::Round((Get-Item $installerPath).Length / 1MB, 1)
+    Write-Host "  Installer  : $installerPath ($size MB)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  -> Double-click file Installer .exe de cai dat len Windows!" -ForegroundColor Cyan
+} else {
+    Write-Host "  [WARN] Khong tim thay file installer output." -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "=========================================================" -ForegroundColor Green
+Write-Host ""

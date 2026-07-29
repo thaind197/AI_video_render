@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['D:\\AI_video_render\\AI_video_render\\desktop_app.py'],
+    ['D:\\AIVideos\\AI_video_render\\desktop_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('D:\\AI_video_render\\AI_video_render\\ui', 'ui'), ('D:\\AI_video_render\\AI_video_render\\config', 'config'), ('D:\\AI_video_render\\AI_video_render\\publishers', 'publishers'), ('D:\\AI_video_render\\AI_video_render\\core', 'core'), ('D:\\AI_video_render\\AI_video_render\\version.py', '.')],
-    hiddenimports=['uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'fastapi'],
+    datas=[('D:\\AIVideos\\AI_video_render\\ui', 'ui'), ('D:\\AIVideos\\AI_video_render\\config', 'config'), ('D:\\AIVideos\\AI_video_render\\publishers', 'publishers'), ('D:\\AIVideos\\AI_video_render\\core', 'core'), ('D:\\AIVideos\\AI_video_render\\version.py', '.'), ('D:\\AIVideos\\AI_video_render\\remote_config.py', '.')],
+    hiddenimports=['uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'fastapi', 'google.auth', 'google.auth.transport.requests', 'google.oauth2.service_account', 'firebase_admin'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -32,6 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='D:\\AIVideos\\AI_video_render\\win_version_info.txt',
 )
 coll = COLLECT(
     exe,

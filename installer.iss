@@ -2,7 +2,7 @@
 ; Veo Studio AI PRO - Inno Setup Installer Script
 ; =========================================================================
 #define MyAppName "Veo Studio AI PRO"
-#define MyAppVersion "2.5.0"
+#define MyAppVersion GetStringFileInfo('dist\VeoStudioAI\VeoStudioAI.exe', 'ProductVersion')
 #define MyAppPublisher "Veo Studio AI"
 #define MyAppURL "https://veostudio.ai"
 #define MyAppExeName "VeoStudioAI.exe"
@@ -18,7 +18,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\VeoStudioAI
 UninstallDisplayIcon={app}\{#MyAppExeName}
 DisableProgramGroupPage=yes
-OutputBaseFilename=VeoStudioAI_Setup_v2.5.0
+OutputBaseFilename=VeoStudioAI_Setup_v{#MyAppVersion}
 OutputDir=dist
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -31,7 +31,7 @@ PrivilegesRequiredOverridesAllowed=commandline
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
 Source: "dist\VeoStudioAI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

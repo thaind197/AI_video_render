@@ -19,6 +19,11 @@ venv.bak/
 .env.production
 !.env.example
 
+# ── Firebase Service Account (Private Key — KHÔNG ĐƯỢC COMMIT!) ─
+**/firebase_service_account.json
+**/serviceAccountKey.json
+**/firebase-adminsdk*.json
+
 # ── PyInstaller & Inno Setup Build Artifacts ────────────
 build/
 dist/
