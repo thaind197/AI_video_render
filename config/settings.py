@@ -10,6 +10,26 @@ load_dotenv(BASE_DIR / ".env")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 FIREBASE_VERSION_URL = os.getenv("FIREBASE_VERSION_URL", "")
 
+def resolve_postgres_url(url: str) -> str:
+    if not url:
+        return ""
+    import socket
+    is_docker = os.path.exists('/.dockerenv') or os.getenv('RUNNING_IN_DOCKER') == 'true'
+    if is_docker:
+        if '@localhost' in url or '@127.0.0.1' in url:
+            url = url.replace('@localhost', '@postgres').replace('@127.0.0.1', '@postgres')
+    else:
+        if '@postgres:' in url or '@postgres/' in url:
+            try:
+                socket.gethostbyname('postgres')
+            except socket.gaierror:
+                url = url.replace('@postgres:', '@localhost:').replace('@postgres/', '@localhost/')
+    return url
+
+POSTGRES_URL = resolve_postgres_url(os.getenv("POSTGRES_URL", os.getenv("DATABASE_URL", "")))
+CENTRAL_SERVER_URL = os.getenv("CENTRAL_SERVER_URL", "https://manor-held-pda-versus.trycloudflare.com").strip()
+
+
 
 # Directory Paths
 STORAGE_DIR = BASE_DIR / "storage"
@@ -92,14 +112,17 @@ for sess_folder in [FACEBOOK_SESSION_DIR, FACEBOOK_PROFILES_DIR, TIKTOK_SESSION_
 def reload_settings():
     global GEMINI_API_KEY, MAX_CONCURRENT_VEO_JOBS, MAX_CONCURRENT_LABS_JOBS, FINAL_DIR, STORAGE_DIR
     global DEFAULT_VEO_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_ASPECT_RATIO, REQUIRE_CONFIRMATION
-    global DEFAULT_VEO_DURATION, DEFAULT_VEO_VARIANTS, DEFAULT_VEO_STRICT_MODEL
+    global DEFAULT_VEO_DURATION, DEFAULT_VEO_VARIANTS, DEFAULT_VEO_STRICT_MODEL, POSTGRES_URL, DEFAULT_ADD_SUBTITLE, DEFAULT_ADD_VOICEOVER
     load_dotenv(BASE_DIR / ".env", override=True)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    POSTGRES_URL = resolve_postgres_url(os.getenv("POSTGRES_URL", os.getenv("DATABASE_URL", "")))
     DEFAULT_VEO_MODEL = os.getenv("DEFAULT_VEO_MODEL", "veo-3.1-lite-generate-preview")
     DEFAULT_IMAGE_MODEL = os.getenv("DEFAULT_IMAGE_MODEL", "imagen-3.0-generate-002")
     DEFAULT_ASPECT_RATIO = os.getenv("DEFAULT_ASPECT_RATIO", "9:16")
     REQUIRE_CONFIRMATION = os.getenv("REQUIRE_CONFIRMATION", "false").lower() == "true"
     DEFAULT_VEO_STRICT_MODEL = os.getenv("DEFAULT_VEO_STRICT_MODEL", "true").lower() == "true"
+    DEFAULT_ADD_SUBTITLE = os.getenv("DEFAULT_ADD_SUBTITLE", "true").lower() == "true"
+    DEFAULT_ADD_VOICEOVER = os.getenv("DEFAULT_ADD_VOICEOVER", "true").lower() == "true"
     try:
         DEFAULT_VEO_DURATION = int(os.getenv("DEFAULT_VEO_DURATION", "8"))
         if DEFAULT_VEO_DURATION not in (4, 6, 8): DEFAULT_VEO_DURATION = 8
@@ -140,7 +163,10 @@ def update_env_settings(
     veo_duration: int = None,
     veo_variants: int = None,
     veo_strict_model: bool = None,
+    default_add_subtitle: bool = None,
+    default_add_voiceover: bool = None,
     gen_engine: str = None,
+    postgres_url: str = None,
     **kwargs
 ):
     env_path = BASE_DIR / ".env"
@@ -152,6 +178,10 @@ def update_env_settings(
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
                     env_vars[k.strip()] = v.strip()
+
+    if postgres_url is not None:
+        env_vars["POSTGRES_URL"] = postgres_url.strip()
+        os.environ["POSTGRES_URL"] = postgres_url.strip()
 
     if api_key is not None:
         env_vars["GEMINI_API_KEY"] = api_key.strip()
@@ -202,6 +232,16 @@ def update_env_settings(
         val_str = "true" if veo_strict_model else "false"
         env_vars["DEFAULT_VEO_STRICT_MODEL"] = val_str
         os.environ["DEFAULT_VEO_STRICT_MODEL"] = val_str
+
+    if default_add_subtitle is not None:
+        val_str = "true" if default_add_subtitle else "false"
+        env_vars["DEFAULT_ADD_SUBTITLE"] = val_str
+        os.environ["DEFAULT_ADD_SUBTITLE"] = val_str
+
+    if default_add_voiceover is not None:
+        val_str = "true" if default_add_voiceover else "false"
+        env_vars["DEFAULT_ADD_VOICEOVER"] = val_str
+        os.environ["DEFAULT_ADD_VOICEOVER"] = val_str
 
     # Handle arbitrary extra env vars via **kwargs (e.g. FB_PAGE_ID, FB_PAGE_ACCESS_TOKEN)
     for k, v in kwargs.items():

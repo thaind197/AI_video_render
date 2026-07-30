@@ -199,8 +199,8 @@ class VideoProcessor:
                 db.update_job(job_id, status=JobStatus.FAILED.value, error_msg="File video raw không tồn tại")
                 return
 
-            add_voiceover = bool(job.get('add_voiceover', 1))
-            add_subtitle = bool(job.get('add_subtitle', 1))
+            add_voiceover = str(job.get('add_voiceover', '1')).lower() not in ('0', 'false', 'none', '', '0.0')
+            add_subtitle = str(job.get('add_subtitle', '1')).lower() not in ('0', 'false', 'none', '', '0.0')
 
             audio_mp3 = FINAL_DIR / f"voice_{job_id}.mp3"
             srt_path = FINAL_DIR / f"sub_{job_id}.srt"
@@ -217,9 +217,12 @@ class VideoProcessor:
                 logger.info(f"Bỏ qua TTS, dùng âm thanh gốc cho Job #{job_id}")
                 audio_mp3 = None  # Signal to merge function to keep original audio
 
-            if add_subtitle and add_voiceover:
-                text_to_speak = job['voiceover_text'] or job['title'] or ""
-                self.create_srt_subtitles(text_to_speak, srt_path)
+            if add_subtitle:
+                text_to_sub = job['voiceover_text'] or job['title'] or ""
+                if text_to_sub.strip():
+                    self.create_srt_subtitles(text_to_sub, srt_path)
+                else:
+                    srt_path = None
             else:
                 srt_path = None  # No subtitle
 

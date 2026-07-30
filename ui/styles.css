@@ -119,6 +119,18 @@ body {
     font-weight: 600;
 }
 
+.nav-item.locked-module {
+    opacity: 0.55;
+    cursor: not-allowed;
+    filter: grayscale(0.7);
+    background-color: #f8fafc;
+}
+
+.nav-item.locked-module:hover {
+    background-color: #fef2f2;
+    color: #ef4444;
+}
+
 .sidebar-footer {
     padding: 16px;
     border-top: 1px solid var(--border-color);
@@ -504,8 +516,9 @@ body {
 
 /* Forms layout */
 .form-card {
-    max-width: 800px;
-    margin: 0 auto;
+    max-width: 100%;
+    width: 100%;
+    margin: 0;
 }
 
 .form-group {
@@ -749,54 +762,72 @@ body {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(4px);
-    z-index: 100;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(5px);
+    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 20px;
 }
 
 .modal-container {
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 16px;
-    width: 750px;
-    max-width: 90%;
+    width: 780px;
+    max-width: 95vw;
+    max-height: 90vh;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-close {
     position: absolute;
-    top: 16px;
-    right: 20px;
-    background: transparent;
+    top: 14px;
+    right: 18px;
+    background: rgba(0, 0, 0, 0.05);
     border: none;
     color: var(--text-secondary);
-    font-size: 28px;
+    font-size: 24px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
     z-index: 10;
+    transition: all 0.2s ease;
 }
 
 .modal-close:hover {
     color: var(--text-color);
+    background: rgba(0, 0, 0, 0.1);
 }
 
 .modal-body {
     display: flex;
     gap: 24px;
     padding: 24px;
+    overflow-y: auto;
+    max-height: calc(90vh - 20px);
+    align-items: flex-start;
 }
 
 .player-916-container {
-    width: 240px;
+    width: 250px;
+    flex-shrink: 0;
     aspect-ratio: 9 / 16;
     background: #000;
     border-radius: 12px;
     overflow: hidden;
     border: 2px solid var(--primary-color);
+    position: sticky;
+    top: 0;
 }
 
 .video-mock-frame {
@@ -830,16 +861,51 @@ body {
 
 .video-info-panel {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 12px;
     color: var(--text-color);
 }
 
+#modal-video-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.4;
+    word-break: break-word;
+    color: var(--text-color);
+}
+
+#modal-video-desc {
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 12px 14px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    color: var(--text-color);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 70px;
+    overflow-y: auto;
+}
+
 .post-buttons {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin-top: 4px;
 }
 
 .fb-btn { background-color: #1877f2; color: #fff; }
@@ -1102,6 +1168,9 @@ body {
     }
     .dashboard-row {
         grid-template-columns: 1fr;
+    }
+    .generate-grid-container {
+        grid-template-columns: 1fr !important;
     }
 }
 

@@ -14,10 +14,53 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="styles.css?v=2.7">
+    <link rel="stylesheet" href="styles.css?v=3.1">
+    <link rel="stylesheet" href="login.css?v=3.1">
 </head>
 
 <body class="ant-light-theme">
+    <!-- Login & License Overlay Modal -->
+    <div id="auth-login-overlay" class="login-overlay">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-brand">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Veo Studio AI PRO
+                </div>
+                <div class="login-subtitle" id="login-subtitle">Đăng nhập tài khoản Veo Studio AI</div>
+            </div>
+
+            <div id="login-alert-box" class="login-alert"></div>
+
+            <form id="login-form" class="login-form">
+                <div class="form-group">
+                    <label>Email Đăng Nhập</label>
+                    <input type="email" id="login-email" class="form-input" placeholder="nhap_email@gmail.com" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Mật Khẩu</label>
+                    <input type="password" id="login-password" class="form-input" placeholder="••••••••" required>
+                </div>
+
+                <div class="form-group" id="login-license-group" style="display: none;">
+                    <label>Mã Bản Quyền (License Key)</label>
+                    <input type="text" id="login-license-key" class="form-input" placeholder="VEO-PRO-XXXX-YYYY">
+                </div>
+
+                <!-- MAC ID tự động gửi lên phía sau background, không hiển thị trên form -->
+                <input type="hidden" id="login-mac-id" value="">
+
+                <button type="submit" class="btn-login-submit" id="btn-login-submit">
+                    <i class="fa-solid fa-right-to-bracket"></i> Đăng Nhập
+                </button>
+            </form>
+
+            <div class="login-footer-info">
+                <a href="#" id="btn-toggle-license-input" style="font-size: 12px; color: #818cf8; text-decoration: none; margin-bottom: 6px; cursor: pointer;" onclick="toggleLicenseInput(event)">🔑 Nhập mã License Key thủ công (nếu muốn đổi key)</a>
+                <span>Cần trợ giúp? Liên hệ Admin để cấp tài khoản.</span>
+            </div>
+        </div>
+    </div>
     <div id="app-layout" class="app-layout">
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
@@ -82,6 +125,12 @@
                     <p id="page-subtitle">Hệ thống sản xuất 100 video 10s/ngày bằng Google Veo API & Auto Post</p>
                 </div>
                 <div class="header-right">
+                    <div id="header-user-badge" class="user-badge" style="display: none;">
+                        <i class="fa-solid fa-user-circle"></i>
+                        <span class="user-email" id="badge-user-email">user@veostudio.ai</span>
+                        <span class="tier-tag" id="badge-user-tier">PRO</span>
+                        <button class="btn-logout" id="btn-header-logout" title="Đăng xuất"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+                    </div>
                     <div class="quota-badge">
                         <i class="fa-solid fa-key"></i>
                         <span>Veo API Status: <strong>Active</strong></span>
@@ -101,7 +150,7 @@
                         <div class="stat-info">
                             <span class="stat-label">Tổng Jobs Trong Hàng Chờ</span>
                             <h2 class="stat-value" id="stat-total">0</h2>
-                            <span class="stat-sub text-blue"><i class="fa-solid fa-database"></i> Dữ liệu SQLite
+                            <span class="stat-sub text-blue"><i class="fa-solid fa-database"></i> Dữ liệu DB
                                 Real-time</span>
                         </div>
                     </div>
@@ -298,159 +347,179 @@
 
             <!-- Tab Content: Prompt Generator -->
             <div id="tab-generate" class="tab-pane">
-                <div class="ant-card form-card">
-                    <div class="card-header">
-                        <h3><i class="fa-solid fa-lightbulb"></i> Sinh Kịch Bản & Prompt Hàng Loạt (Prompt Mode)</h3>
+                <div class="ant-card form-card" style="padding: 20px;">
+                    <div class="card-header" style="margin-bottom: 14px;">
+                        <h3 style="margin: 0;"><i class="fa-solid fa-lightbulb"></i> Sinh Kịch Bản & Prompt Hàng Loạt (Prompt Mode)</h3>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" style="padding: 0;">
                         <form id="form-generate-prompt">
-                            <div class="form-group">
-                                <label>Chủ đề nội dung (Topic Prompt):</label>
-                                <input type="text" id="prompt-topic" class="ant-input ant-input-lg"
-                                    placeholder="Ví dụ: Mẹo sử dụng AI hiệu quả 2026, Fact động vật kỳ lạ..."
-                                    value="Những phát minh AI đỉnh cao thay đổi thế giới 2026">
+                            <div class="generate-grid-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <!-- LEFT COLUMN -->
+                                <div class="generate-col-left" style="display: flex; flex-direction: column; gap: 14px;">
+                                    <!-- Topic & Count Row -->
+                                    <div style="display: flex; gap: 14px; align-items: flex-start;">
+                                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                            <label style="font-weight: 600; font-size: 14px;"><i class="fa-solid fa-pen-to-square" style="color: #1890ff;"></i> Chủ đề nội dung / Text Prompt (Topic Prompt):</label>
+                                            <textarea id="prompt-topic" class="ant-input" rows="3"
+                                                placeholder="Ví dụ: Mẹo sử dụng AI hiệu quả 2026, Fact động vật kỳ lạ... (Nhập prompt dài thoải mái)"
+                                                style="width: 100%; font-size: 14px; font-weight: 500; padding: 10px 14px; border-radius: 8px; resize: vertical; min-height: 80px;">Những phát minh AI đỉnh cao thay đổi thế giới 2026</textarea>
+                                        </div>
+                                        <div class="form-group" style="width: 130px; margin-bottom: 0;">
+                                            <label style="font-weight: 600; font-size: 14px;"><i class="fa-solid fa-hashtag" style="color: #52c41a;"></i> Số lượng:</label>
+                                            <input type="number" id="prompt-count" class="ant-input ant-input-lg" min="1" max="100"
+                                                value="10" style="text-align: center; font-weight: 700; font-size: 18px; height: 80px; border-radius: 8px;">
+                                        </div>
+                                    </div>
+
+                                    <!-- Context & Persistence -->
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-weight: 600;"><i class="fa-solid fa-link"></i> Khóa Context & Nhất Quán Chuỗi Kịch Bản:</label>
+                                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+                                            <label class="ant-checkbox-card active" style="padding: 10px 14px;">
+                                                <input type="checkbox" id="prompt-keep-context" checked>
+                                                <div class="checkbox-card-content">
+                                                    <span class="checkbox-title" style="font-size: 13px;">Giữ Context & Nhân Vật Nhất Quán (Continuous Storyline)</span>
+                                                    <span class="checkbox-desc" style="font-size: 11px;">Tự động kết nối các tập nối tiếp, giữ nguyên bối cảnh cho Veo API</span>
+                                                </div>
+                                            </label>
+                                            <input type="text" id="prompt-custom-context" class="ant-input"
+                                                placeholder="Mô tả nhân vật / bối cảnh cố định (Tùy chọn. VD: Nam KTS 30 tuổi...)"
+                                                style="width: 100%;">
+                                        </div>
+                                    </div>
+
+                                    <!-- Veo Engine Settings Row -->
+                                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; background: rgba(255,255,255,0.03); padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-color);">
+                                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                                            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-crop-simple"></i> Tỷ lệ:</label>
+                                            <select id="prompt-aspect-ratio" class="ant-select" style="padding: 5px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                                <option value="9:16" selected>9:16 (Shorts)</option>
+                                                <option value="16:9">16:9 (Ngang)</option>
+                                            </select>
+                                        </div>
+                                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                                            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-clock"></i> Thời lượng:</label>
+                                            <select id="prompt-duration" class="ant-select" style="padding: 5px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                                <option value="8" selected>8s (Mặc định)</option>
+                                                <option value="6">6s</option>
+                                                <option value="4">4s</option>
+                                            </select>
+                                        </div>
+                                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                                            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-clone"></i> Biến thể (x):</label>
+                                            <select id="prompt-variants" class="ant-select" style="padding: 5px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                                <option value="1" selected>1x</option>
+                                                <option value="2">x2</option>
+                                                <option value="3">x3</option>
+                                                <option value="4">x4</option>
+                                            </select>
+                                        </div>
+                                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                                            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-robot"></i> Model Veo:</label>
+                                            <select id="prompt-veo-model" class="ant-select" style="padding: 5px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                                <option value="veo-3.1-lite-generate-preview" selected>3.1 Lite</option>
+                                                <option value="veo-3.1-fast-generate-preview">3.1 Fast</option>
+                                                <option value="veo-3.1-generate-preview">3.1 Standard</option>
+                                                <option value="veo-2.0-generate-001">2.0 Legacy</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- RIGHT COLUMN -->
+                                <div class="generate-col-right" style="display: flex; flex-direction: column; gap: 14px;">
+                                    <!-- Styles Group -->
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-weight: 600;"><i class="fa-solid fa-palette"></i> Phong cách hình ảnh (Styles):</label>
+                                        <div class="checkbox-group" id="group-prompt-styles" style="grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 6px;">
+                                            <label class="ant-checkbox-card active" style="padding: 8px 12px;">
+                                                <input type="checkbox" name="prompt-style" value="cinematic" checked>
+                                                <div class="checkbox-card-content">
+                                                    <span class="checkbox-title" style="font-size: 13px;">Cinematic 4K</span>
+                                                    <span class="checkbox-desc" style="font-size: 11px;">Điện ảnh, chân thực</span>
+                                                </div>
+                                            </label>
+                                            <label class="ant-checkbox-card" style="padding: 8px 12px;">
+                                                <input type="checkbox" name="prompt-style" value="cyberpunk">
+                                                <div class="checkbox-card-content">
+                                                    <span class="checkbox-title" style="font-size: 13px;">Neon Cyberpunk</span>
+                                                    <span class="checkbox-desc" style="font-size: 11px;">Đèn Neon tương lai</span>
+                                                </div>
+                                            </label>
+                                            <label class="ant-checkbox-card" style="padding: 8px 12px;">
+                                                <input type="checkbox" name="prompt-style" value="3d">
+                                                <div class="checkbox-card-content">
+                                                    <span class="checkbox-title" style="font-size: 13px;">3D Pixar Style</span>
+                                                    <span class="checkbox-desc" style="font-size: 11px;">Đồ họa 3D hoạt hình</span>
+                                                </div>
+                                            </label>
+                                            <label class="ant-checkbox-card" style="padding: 8px 12px;">
+                                                <input type="checkbox" name="prompt-style" value="documentary">
+                                                <div class="checkbox-card-content">
+                                                    <span class="checkbox-title" style="font-size: 13px;">NatGeo Doc</span>
+                                                    <span class="checkbox-desc" style="font-size: 11px;">Phim tư liệu chân thực</span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Voices Group -->
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-weight: 600;"><i class="fa-solid fa-microphone-lines"></i> Giọng đọc TTS AI (Voices):</label>
+                                        <div class="checkbox-group" id="group-prompt-voices" style="grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 6px;">
+                                            <label class="ant-checkbox-card active" style="padding: 8px 12px;">
+                                                <input type="checkbox" name="prompt-voice" value="vi-VN-HoaiMyNeural" checked>
+                                                <div class="checkbox-card-content">
+                                                    <span class="checkbox-title" style="font-size: 13px;">Hoài Mỹ</span>
+                                                    <span class="checkbox-desc" style="font-size: 11px;">Nữ miền Nam natural</span>
+                                                </div>
+                                            </label>
+                                            <label class="ant-checkbox-card" style="padding: 8px 12px;">
+                                                <input type="checkbox" name="prompt-voice" value="vi-VN-NamMinhNeural">
+                                                <div class="checkbox-card-content">
+                                                    <span class="checkbox-title" style="font-size: 13px;">Nam Minh</span>
+                                                    <span class="checkbox-desc" style="font-size: 11px;">Nam miền Bắc ấm áp</span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label>Số lượng video cần sinh (Target Quantity):</label>
-                                <input type="number" id="prompt-count" class="ant-input ant-input-lg" min="1" max="100"
-                                    value="10" style="max-width: 250px;">
-                            </div>
-                            <div class="form-group">
-                                <label><i class="fa-solid fa-palette"></i> Phong cách hình ảnh (Tùy chọn - Chọn nhiều
-                                    hoặc để trống):</label>
-                                <div class="checkbox-group" id="group-prompt-styles">
-                                    <label class="ant-checkbox-card active">
-                                        <input type="checkbox" name="prompt-style" value="cinematic" checked>
-                                        <div class="checkbox-card-content">
-                                            <span class="checkbox-title">Cinematic 4K</span>
-                                            <span class="checkbox-desc">Điện ảnh, chân thực, sắc nét 4K</span>
-                                        </div>
-                                    </label>
-                                    <label class="ant-checkbox-card">
-                                        <input type="checkbox" name="prompt-style" value="cyberpunk">
-                                        <div class="checkbox-card-content">
-                                            <span class="checkbox-title">Neon Cyberpunk</span>
-                                            <span class="checkbox-desc">Đèn Neon, phong cách tương lai</span>
-                                        </div>
-                                    </label>
-                                    <label class="ant-checkbox-card">
-                                        <input type="checkbox" name="prompt-style" value="3d">
-                                        <div class="checkbox-card-content">
-                                            <span class="checkbox-title">3D Pixar Style</span>
-                                            <span class="checkbox-desc">Đồ họa 3D dễ thương, hoạt hình</span>
-                                        </div>
-                                    </label>
-                                    <label class="ant-checkbox-card">
-                                        <input type="checkbox" name="prompt-style" value="documentary">
-                                        <div class="checkbox-card-content">
-                                            <span class="checkbox-title">National Geographic</span>
-                                            <span class="checkbox-desc">Thước phim tư liệu chân thực</span>
-                                        </div>
-                                    </label>
+
+                            <!-- ACTION FOOTER BAR -->
+                            <div style="display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-color); padding-top: 14px;">
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    <button type="submit" class="ant-btn ant-btn-primary ant-btn-lg" style="height: 40px; font-weight: 600; font-size: 13px;">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i> Sinh Batch Video Kịch Bản (Gemini API)
+                                    </button>
+                                    <button type="button" class="ant-btn ant-btn-lg" style="height: 40px; background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; border: none; font-weight: 600; font-size: 13px;" onclick="generateViaLabsGoogle(document.getElementById('prompt-topic').value)">
+                                        <i class="fa-brands fa-google"></i> Mở Labs.google & Tạo Video
+                                    </button>
                                 </div>
-                            </div>
-                            <div class="form-group" style="margin-top: 20px;">
-                                <label><i class="fa-solid fa-microphone-lines"></i> Giọng đọc TTS AI (Tùy chọn - Chọn
-                                    nhiều hoặc để trống):</label>
-                                <div class="checkbox-group" id="group-prompt-voices">
-                                    <label class="ant-checkbox-card active">
-                                        <input type="checkbox" name="prompt-voice" value="vi-VN-HoaiMyNeural" checked>
-                                        <div class="checkbox-card-content">
-                                            <span class="checkbox-title">Hoài Mỹ</span>
-                                            <span class="checkbox-desc">Nữ miền Nam natural</span>
-                                        </div>
-                                    </label>
-                                    <label class="ant-checkbox-card">
-                                        <input type="checkbox" name="prompt-voice" value="vi-VN-NamMinhNeural">
-                                        <div class="checkbox-card-content">
-                                            <span class="checkbox-title">Nam Minh</span>
-                                            <span class="checkbox-desc">Nam miền Bắc ấm áp</span>
-                                        </div>
-                                    </label>
-                                </div>
-                            </div>
-                            <div class="form-group" style="margin-top: 20px;">
-                                <label><i class="fa-solid fa-link"></i> Khóa Context & Nhất Quán Chuỗi Kịch Bản (Context
-                                    & Character Persistence):</label>
-                                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
-                                    <label class="ant-checkbox-card active" style="max-width: 100%;">
-                                        <input type="checkbox" id="prompt-keep-context" checked>
-                                        <div class="checkbox-card-content">
-                                            <span class="checkbox-title">Giữ Context & Nhân Vật Nhất Quán (Continuous
-                                                Storyline & Consistent Character)</span>
-                                            <span class="checkbox-desc">Tự động kết nối các video thành 1 chuỗi câu
-                                                chuyện nối tiếp (Tập 1, Tập 2...), giữ nguyên nhân vật và bối cảnh cho
-                                                Google Veo API</span>
-                                        </div>
-                                    </label>
-                                    <input type="text" id="prompt-custom-context" class="ant-input ant-input-lg"
-                                        placeholder="Mô tả nhân vật / bối cảnh cố định (Tùy chọn. VD: Nam KTS 30 tuổi, phòng lab AI hiện đại...)"
-                                        style="width: 100%;">
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 12px; margin-top: 15px; flex-wrap: wrap; background: rgba(255,255,255,0.03); padding: 14px; border-radius: 10px; border: 1px solid var(--border-color);">
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-crop-simple"></i> Tỷ lệ khung hình:</label>
-                                    <select id="prompt-aspect-ratio" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
-                                        <option value="9:16" selected>9:16 (Shorts/Reels)</option>
-                                        <option value="16:9">16:9 (Ngang YouTube)</option>
-                                    </select>
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-clock"></i> Thời lượng:</label>
-                                    <select id="prompt-duration" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
-                                        <option value="8" selected>8s (Mặc định)</option>
-                                        <option value="6">6s</option>
-                                        <option value="4">4s</option>
-                                    </select>
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-clone"></i> Số biến thể (x):</label>
-                                    <select id="prompt-variants" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
-                                        <option value="1" selected>1x</option>
-                                        <option value="2">x2</option>
-                                        <option value="3">x3</option>
-                                        <option value="4">x4</option>
-                                    </select>
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 200px;">
-                                    <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary);"><i class="fa-solid fa-robot"></i> Model Google Veo:</label>
-                                    <select id="prompt-veo-model" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
-                                        <option value="veo-3.1-lite-generate-preview" selected>Veo 3.1 - Lite [Lower Priority]</option>
-                                        <option value="veo-3.1-fast-generate-preview">Veo 3.1 - Fast [High Speed]</option>
-                                        <option value="veo-3.1-generate-preview">Veo 3.1 - Standard [Quality]</option>
-                                        <option value="veo-2.0-generate-001">Veo 2.0 Legacy</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div style="display: flex; gap: 12px; margin-top: 25px; flex-wrap: wrap; align-items: center;">
-                                <button type="submit" class="ant-btn ant-btn-primary ant-btn-lg">
-                                    <i class="fa-solid fa-wand-magic-sparkles"></i> Sinh Batch Video Kịch Bản (Gemini API)
-                                </button>
-                                <button type="button" class="ant-btn ant-btn-lg" style="background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; border: none; font-weight: 600;" onclick="generateViaLabsGoogle(document.getElementById('prompt-topic').value)">
-                                    <i class="fa-brands fa-google"></i> Mở Labs.google & Tạo Video Từ Prompt
-                                </button>
-                                <div style="display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);">
-                                    <i class="fa-solid fa-sliders" style="color: #4285f4; font-size: 13px;"></i>
-                                    <label for="labs-quality-select" style="font-size: 13px; font-weight: 500; color: var(--text-secondary); white-space: nowrap;">Độ phân giải tải:</label>
-                                    <select id="labs-quality-select" class="ant-select" style="padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
-                                        <option value="1080p" selected>1080p (Full HD)</option>
-                                        <option value="720p">720p (Gốc)</option>
-                                        <option value="4K">4K (Siêu nét - 50 credits)</option>
-                                        <option value="270p">270p (GIF)</option>
-                                    </select>
-                                </div>
-                                <div style="display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);">
-                                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500; user-select: none;">
-                                        <input type="checkbox" id="labs-subtitle-checkbox" checked style="cursor: pointer; transform: scale(1.15);">
-                                        <i class="fa-solid fa-closed-captioning" style="color: #fa8c16;"></i>
-                                        <span>FFmpeg Render Sub</span>
-                                    </label>
-                                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; font-weight: 500; user-select: none;">
-                                        <input type="checkbox" id="labs-voiceover-checkbox" checked style="cursor: pointer; transform: scale(1.15);">
-                                        <i class="fa-solid fa-microphone" style="color: #52c41a;"></i>
-                                        <span>Giọng Đọc AI</span>
-                                    </label>
+
+                                <div style="display: flex; gap: 10px; align-items: center;">
+                                    <div style="display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);">
+                                        <i class="fa-solid fa-sliders" style="color: #4285f4; font-size: 13px;"></i>
+                                        <label for="labs-quality-select" style="font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">Tải:</label>
+                                        <select id="labs-quality-select" class="ant-select" style="padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color);">
+                                            <option value="1080p" selected>1080p (Full HD)</option>
+                                            <option value="720p">720p (Gốc)</option>
+                                            <option value="4K">4K (Siêu nét)</option>
+                                            <option value="270p">270p (GIF)</option>
+                                        </select>
+                                    </div>
+                                    <div style="display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.05); padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);">
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 600; user-select: none;">
+                                            <input type="checkbox" id="labs-subtitle-checkbox" checked style="cursor: pointer; transform: scale(1.1);">
+                                            <i class="fa-solid fa-closed-captioning" style="color: #fa8c16;"></i>
+                                            <span>FFmpeg Render Sub</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 600; user-select: none;">
+                                            <input type="checkbox" id="labs-voiceover-checkbox" checked style="cursor: pointer; transform: scale(1.1);">
+                                            <i class="fa-solid fa-microphone" style="color: #52c41a;"></i>
+                                            <span>Giọng Đọc AI</span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </form>
@@ -513,9 +582,8 @@
                     style="padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; border-radius: 8px;">
                     <div>
                         <h4 style="margin: 0; font-size: 15px; font-weight: 600;"><i
-                                class="fa-solid fa-layer-group"></i> Ghép Nối Nhiều Video Thành 1 Video Dài</h4>
-                        <small style="color: var(--text-secondary);">Tích chọn từ 2 video trở lên để tự động ghép nối
-                            chuẩn 9:16 bằng FFmpeg</small>
+                                class="fa-solid fa-layer-group"></i> Ghép Nối Nhiều Video Thành 1 Video Dài (FFmpeg Direct)</h4>
+                        <small style="color: var(--text-secondary);">Tích chọn các video theo đúng thứ tự bạn muốn ghép. FFmpeg sẽ tự động ghép nối trực tiếp nhanh chóng.</small>
                     </div>
                     <div style="display: flex; gap: 12px; align-items: center;">
                         <span id="selected-count-badge" class="ant-tag ant-tag-processing"
@@ -526,7 +594,7 @@
                         </button>
                         <button class="ant-btn ant-btn-primary ant-btn-lg" id="btn-concat-selected" disabled
                             style="display: flex; align-items: center; gap: 8px;">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i> Ghép Video Đã Chọn
+                            <i class="fa-solid fa-layer-group"></i> Ghép Video Đã Chọn (FFmpeg)
                         </button>
                     </div>
                 </div>
@@ -776,6 +844,20 @@
                                 </div>
                                 <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Đường dẫn
                                     thư mục lưu trữ các video 9:16 sau khi render hoàn chỉnh.</small>
+                            </div>
+                            <div class="form-group" style="margin-top: 20px;">
+                                <label><i class="fa-solid fa-closed-captioning" style="color: #fa8c16;"></i> Tùy chọn Mặc Định Render FFmpeg Sub & Giọng Đọc:</label>
+                                <div style="display: flex; gap: 20px; margin-top: 8px; flex-wrap: wrap;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                                        <input type="checkbox" id="settings-default-add-subtitle" checked style="transform: scale(1.2); cursor: pointer;">
+                                        <span style="color: var(--text-main);">Tự động gắn phụ đề FFmpeg (Render Sub)</span>
+                                    </label>
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                                        <input type="checkbox" id="settings-default-add-voiceover" checked style="transform: scale(1.2); cursor: pointer;">
+                                        <span style="color: var(--text-main);">Tự động đọc giọng AI (TTS Voiceover)</span>
+                                    </label>
+                                </div>
+                                <small style="color: var(--text-secondary); margin-top: 4px; display: block;">Thiết lập trạng thái bật/tắt mặc định cho tính năng chèn phụ đề (Burn-in sub) và sinh thoại TTS trên các form tạo video.</small>
                             </div>
                             <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 25px 0;">
 
@@ -1107,7 +1189,7 @@
         </div>
     </div>
 
-    <script src="app.js?v=2.7"></script>
+    <script src="app.js?v=3.1"></script>
 </body>
 
 </html>

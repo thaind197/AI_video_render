@@ -1,6 +1,16 @@
 import sys
 import threading
 import logging
+from typing import Optional, List, Dict, Any
+
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -139,6 +149,8 @@ class PromptBatchRequest(BaseModel):
     variants: int = 1
     veo_model: str = "veo-3.1-lite-generate-preview"
     quality: str = "1080p"
+    add_voiceover: bool = True
+    add_subtitle: bool = True
 
 class CloneVideoRequest(BaseModel):
     url: str
@@ -156,6 +168,7 @@ from config.settings import update_env_settings, reload_settings
 
 class SettingsUpdateRequest(BaseModel):
     gemini_api_key: str = None
+    postgres_url: str = None
     max_workers: int = 5
     max_labs_workers: int = 3
     gen_engine: str = "labs"
@@ -167,6 +180,8 @@ class SettingsUpdateRequest(BaseModel):
     veo_duration: int = 8
     veo_variants: int = 1
     veo_strict_model: bool = True
+    default_add_subtitle: bool = True
+    default_add_voiceover: bool = True
 
 class SocialLoginRequest(BaseModel):
     platform: str
@@ -345,6 +360,7 @@ def get_settings():
         "status": "success",
         "data": {
             "gemini_api_key": cfg.GEMINI_API_KEY,
+            "postgres_url": getattr(cfg, 'POSTGRES_URL', ''),
             "max_workers": cfg.MAX_CONCURRENT_VEO_JOBS,
             "max_labs_workers": getattr(cfg, 'MAX_CONCURRENT_LABS_JOBS', 3),
             "gen_engine": getattr(cfg, 'DEFAULT_GEN_ENGINE', 'labs'),
@@ -356,6 +372,8 @@ def get_settings():
             "veo_duration": cfg.DEFAULT_VEO_DURATION,
             "veo_variants": cfg.DEFAULT_VEO_VARIANTS,
             "veo_strict_model": cfg.DEFAULT_VEO_STRICT_MODEL,
+            "default_add_subtitle": getattr(cfg, 'DEFAULT_ADD_SUBTITLE', True),
+            "default_add_voiceover": getattr(cfg, 'DEFAULT_ADD_VOICEOVER', True),
             "fb_page_id": getattr(cfg, 'FB_PAGE_ID', ''),
             "fb_page_token": "****" if getattr(cfg, 'FB_PAGE_ACCESS_TOKEN', '') else "",
         }
@@ -363,10 +381,11 @@ def get_settings():
 
 @app.post("/api/settings")
 def update_settings(req: SettingsUpdateRequest):
-    """Update system settings (API Key, Max Workers, Storage Directory, Labs.google Agent options)"""
+    """Update system settings (API Key, Postgres URL, Max Workers, Storage Directory, Labs.google Agent options)"""
     try:
         update_env_settings(
             api_key=req.gemini_api_key,
+            postgres_url=req.postgres_url,
             max_workers=req.max_workers,
             max_labs_workers=req.max_labs_workers,
             gen_engine=req.gen_engine,
@@ -378,6 +397,8 @@ def update_settings(req: SettingsUpdateRequest):
             veo_duration=req.veo_duration,
             veo_variants=req.veo_variants,
             veo_strict_model=req.veo_strict_model,
+            default_add_subtitle=req.default_add_subtitle,
+            default_add_voiceover=req.default_add_voiceover,
         )
         return {
             "status": "success",
@@ -422,7 +443,9 @@ def generate_prompt_batch(req: PromptBatchRequest, background_tasks: BackgroundT
             duration=req.duration,
             variants=req.variants,
             veo_model=req.veo_model,
-            quality=req.quality
+            quality=req.quality,
+            add_voiceover=req.add_voiceover,
+            add_subtitle=req.add_subtitle
         )
 
     background_tasks.add_task(_create)
@@ -538,6 +561,123 @@ def get_social_status():
             "labs_google": labs_gen.is_logged_in()
         }
     }
+
+class AppLoginRequest(BaseModel):
+    email: str
+    password: str
+    license_key: Optional[str] = ""
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+class AdminCreateLicenseRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str = ""
+    tier: str = "pro"
+    max_devices: int = 2
+    valid_days: int = 30
+    allowed_modules: Optional[List[str]] = None
+
+class AdminUpdateModulesRequest(BaseModel):
+    allowed_modules: List[str]
+
+# ── Subscription & Licensing API Endpoints ───────────────────
+from core.licensing_client import LicensingClient
+from core.licensing_service import LicensingService
+
+lic_client = LicensingClient()
+lic_service = LicensingService()
+
+@app.post("/api/admin/login")
+def admin_login(req: AdminLoginRequest):
+    res = lic_service.authenticate_admin(req.email, req.password)
+    if res.get("status") != "success":
+        raise HTTPException(status_code=401, detail=res.get("message", "Đăng nhập Admin thất bại"))
+    return res
+
+@app.post("/api/auth/login")
+def client_login(req: AppLoginRequest):
+    res = lic_client.login(req.email, req.password, req.license_key or "")
+    if res.get("status") != "success":
+        raise HTTPException(status_code=400, detail=res.get("message", "Đăng nhập thất bại"))
+    return res
+
+@app.post("/api/auth/logout")
+def client_logout():
+    lic_client.logout()
+    return {"status": "success", "message": "Đã đăng xuất khỏi ứng dụng"}
+
+@app.get("/api/auth/status")
+def client_auth_status():
+    is_auth = lic_client.is_authenticated()
+    user = lic_client.get_current_user() if is_auth else None
+    license_info = lic_client.get_current_license() if is_auth else None
+    mac_id = lic_client.get_mac_id()
+    is_mac_reg = lic_service.is_mac_registered(mac_id)
+    return {
+        "authenticated": is_auth,
+        "mac_id": mac_id,
+        "is_mac_registered": is_mac_reg,
+        "user": user,
+        "license": license_info
+    }
+
+@app.get("/api/auth/heartbeat")
+def client_heartbeat():
+    res = lic_client.verify_heartbeat()
+    return res
+
+# ── Admin Web Control Endpoints ─────────────────────────────
+@app.get("/api/admin/stats")
+def admin_stats():
+    return lic_service.get_admin_dashboard_stats()
+
+@app.get("/api/admin/licenses")
+def admin_list_licenses():
+    return {"licenses": lic_service.list_all_licenses()}
+
+@app.post("/api/admin/licenses")
+def admin_create_license(req: AdminCreateLicenseRequest):
+    res = lic_service.create_user_and_license(
+        email=req.email,
+        password=req.password,
+        full_name=req.full_name,
+        tier=req.tier,
+        max_devices=req.max_devices,
+        valid_days=req.valid_days,
+        allowed_modules=req.allowed_modules
+    )
+    if res.get("status") != "success":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
+
+@app.post("/api/admin/licenses/{license_id}/modules")
+def admin_update_license_modules(license_id: str, req: AdminUpdateModulesRequest):
+    ok = lic_service.update_license_modules(license_id, req.allowed_modules)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Không thể cập nhật danh sách module")
+    return {"status": "success", "message": "Đã cập nhật quyền module thành công!"}
+
+@app.post("/api/admin/licenses/{license_id}/reset-mac")
+def admin_reset_mac(license_id: str):
+    ok = lic_service.reset_license_devices(license_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Không thể gỡ MAC ID")
+    return {"status": "success", "message": "Đã reset toàn bộ thiết bị (MAC ID) cho License thành công!"}
+
+@app.post("/api/admin/users/{user_id}/block")
+def admin_toggle_block(user_id: str, block: bool = True):
+    ok = lic_service.toggle_user_block(user_id, block)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Không thể cập nhật trạng thái user")
+    action_text = "khóa" if block else "mở khóa"
+    return {"status": "success", "message": f"Đã {action_text} tài khoản thành công!"}
+
+@app.get("/api/admin/prompt-history")
+def admin_prompt_history(limit: int = 50):
+    return {"history": lic_service.get_prompt_history(limit=limit)}
 
 ACTIVE_LOGIN_THREADS = {}
 login_thread_lock = threading.Lock()
@@ -1213,11 +1353,14 @@ else:
     BASE_DIR = Path(__file__).resolve().parent
 
 UI_DIR = BASE_DIR / "ui"
+ADMIN_DIR = BASE_DIR / "admin"
+ADMIN_DIR.mkdir(parents=True, exist_ok=True)
 DOWNLOADS_DIR = BASE_DIR / "storage" / "downloads"
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 app.mount("/ui", StaticFiles(directory=str(UI_DIR), html=True), name="ui")
+app.mount("/admin", StaticFiles(directory=str(ADMIN_DIR), html=True), name="admin")
 app.mount("/videos", StaticFiles(directory=str(FINAL_DIR)), name="videos")
 app.mount("/downloads", StaticFiles(directory=str(DOWNLOADS_DIR)), name="downloads")
 

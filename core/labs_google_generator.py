@@ -352,6 +352,25 @@ class LabsGoogleGenerator(BasePublisher):
                 logger.info(f"[LabsGoogle] Đã nhập prompt thành công: '{prompt[:50]}...'")
                 self._screenshot(page, "labs_02_prompt_entered")
 
+                # Log prompt to central Licensing / Audit DB
+                try:
+                    from core.licensing_client import LicensingClient
+                    lic_cl = LicensingClient()
+                    user = lic_cl.get_current_user() or {}
+                    lic = lic_cl.get_current_license() or {}
+                    lic_cl.service.log_prompt_history(
+                        user_id=user.get("id", "anonymous"),
+                        license_id=lic.get("id", "anonymous"),
+                        mac_id=lic_cl.get_mac_id(),
+                        veo_prompt=prompt,
+                        aspect_ratio=aspect_ratio,
+                        duration=duration,
+                        model=veo_model or "veo-2",
+                        status="SUCCESS"
+                    )
+                except Exception as ex_log:
+                    logger.warning(f"[LabsGoogle] Lỗi ghi prompt_history log: {ex_log}")
+
                 # Step 4: Submit prompt by pressing Enter & Click Submit Button if available
                 logger.info("[LabsGoogle] Nhấn phím Enter để gửi prompt...")
                 page.keyboard.press("Enter")

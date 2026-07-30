@@ -102,11 +102,13 @@ class MultiThreadQueueManager:
         duration: int = 8,
         variants: int = 1,
         veo_model: str = None,
-        quality: str = "1080p"
+        quality: str = "1080p",
+        add_voiceover: bool = True,
+        add_subtitle: bool = True
     ):
         """Add batch of prompt jobs to queue with selected styles, voices & context persistence"""
         batch_id = f"batch_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-        logger.info(f"Đang sinh {count} kịch bản từ chủ đề: '{topic}' [batch_id={batch_id}] với styles={styles}, voices={voices}, keep_context={keep_context}...")
+        logger.info(f"Đang sinh {count} kịch bản từ chủ đề: '{topic}' [batch_id={batch_id}] với styles={styles}, voices={voices}, keep_context={keep_context}, voiceover={add_voiceover}, subtitle={add_subtitle}...")
         scripts = self.script_engine.generate_batch_scripts(topic, count=count, keep_context=keep_context, custom_context=custom_context)
         added_count = 0
         
@@ -146,7 +148,9 @@ class MultiThreadQueueManager:
                 veo_model=veo_model or DEFAULT_VEO_MODEL,
                 quality=quality or "1080p",
                 keep_context=keep_context,
-                batch_id=batch_id
+                batch_id=batch_id,
+                add_voiceover=add_voiceover,
+                add_subtitle=add_subtitle
             )
             added_count += 1
         logger.info(f"Đã thêm thành công {added_count} job vào hàng chờ DB (engine={DEFAULT_GEN_ENGINE})!")

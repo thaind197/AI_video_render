@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veo Studio AI PRO - Admin Central Control Panel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="admin-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="admin-sidebar">
+            <div class="admin-brand">
+                <i class="fa-solid fa-shield-halved"></i> Central Control Panel
+            </div>
+            <nav class="admin-nav">
+                <a href="#stats" class="nav-link active" data-tab="tab-stats">
+                    <i class="fa-solid fa-chart-line"></i> Dashboard Thống Kê
+                </a>
+                <a href="#licenses" class="nav-link" data-tab="tab-licenses">
+                    <i class="fa-solid fa-id-card"></i> Quản Lý User & License Key
+                </a>
+                <a href="#prompts" class="nav-link" data-tab="tab-prompts">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Lịch Sử Prompt (Audit)
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="admin-main">
+            <div class="top-bar">
+                <div>
+                    <h1 class="page-title">Veo Studio AI PRO - Subscription Control</h1>
+                    <p style="color: #94a3b8; font-size: 13px; margin-top: 4px;">Quản lý tài khoản, mã máy MAC ID & Bản quyền hệ thống</p>
+                </div>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <div id="admin-user-badge" style="display: flex; align-items: center; gap: 8px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 14px; border-radius: 8px; font-size: 13px; color: #a5b4fc;">
+                        <i class="fa-solid fa-user-shield"></i> <span id="admin-email-display">admin@veostudio.ai</span>
+                        <button onclick="adminLogout()" style="background: transparent; border: none; color: #f87171; cursor: pointer; margin-left: 6px;" title="Đăng xuất Admin">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </button>
+                    </div>
+                    <button class="btn btn-primary" onclick="loadDashboardData()">
+                        <i class="fa-solid fa-rotate"></i> Làm Mới Dữ Liệu
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab 1: Dashboard Stats -->
+            <div id="tab-stats" class="tab-panel active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon purple"><i class="fa-solid fa-users"></i></div>
+                        <div>
+                            <div class="stat-num" id="stat-total-users">0</div>
+                            <div class="stat-label">Tổng Tài Khoản User</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-solid fa-key"></i></div>
+                        <div>
+                            <div class="stat-num" id="stat-active-licenses">0</div>
+                            <div class="stat-label">License Key Đang Hoạt Động</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-solid fa-desktop"></i></div>
+                        <div>
+                            <div class="stat-num" id="stat-active-devices">0</div>
+                            <div class="stat-label">Thiết Bị MAC ID Đã Binding</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon amber"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                        <div>
+                            <div class="stat-num" id="stat-total-prompts">0</div>
+                            <div class="stat-label">Tổng Video Prompt Đã Sinh</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Licenses & Users Management -->
+            <div id="tab-licenses" class="tab-panel">
+                <!-- Create License Card -->
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-user-plus"></i> Tạo Tài Khoản & Cấp License Key Mới</div>
+                    <form id="create-license-form">
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label>Email Khách Hàng</label>
+                                <input type="email" id="new-user-email" placeholder="customer@gmail.com" required>
+                            </div>
+
+                            <div class="form-field">
+                                <label>Mật Khẩu Mới</label>
+                                <input type="text" id="new-user-password" value="123456" required>
+                            </div>
+
+                            <div class="form-field">
+                                <label>Họ & Tên</label>
+                                <input type="text" id="new-user-name" placeholder="Nguyễn Văn A">
+                            </div>
+
+                            <div class="form-field">
+                                <label>Gói Cước (Tier)</label>
+                                <select id="new-user-tier">
+                                    <option value="standard">Standard (1 Máy)</option>
+                                    <option value="pro" selected>Pro (2 Máy)</option>
+                                    <option value="enterprise">Enterprise (5 Máy)</option>
+                                </select>
+                            </div>
+
+                            <div class="form-field">
+                                <label>Số Máy Tối Đa (Max Devices)</label>
+                                <input type="number" id="new-user-max-devs" value="2" min="1" max="100">
+                            </div>
+
+                            <div class="form-field">
+                                <label>Hạn Sử Dụng (Ngày)</label>
+                                <input type="number" id="new-user-days" value="30" min="1" max="3650">
+                            </div>
+                        </div>
+
+                        <!-- Module Permissions Checkbox Section -->
+                        <div style="margin-top: 20px; padding: 16px; background: #0f172a; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+                            <label style="font-size: 13px; font-weight: 700; color: #818cf8; display: block; margin-bottom: 12px;">
+                                <i class="fa-solid fa-layer-group"></i> Phân Quyền Chi Tiết Các Module Được Phép Truy Cập:
+                            </label>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: #e2e8f0;">
+                                    <input type="checkbox" class="mod-chk" value="veo_generate" checked> ⚡ Tạo Video Prompt (Veo)
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: #e2e8f0;">
+                                    <input type="checkbox" class="mod-chk" value="tiktok_clone" checked> 📋 Clone Video TikTok
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: #e2e8f0;">
+                                    <input type="checkbox" class="mod-chk" value="video_library" checked> 🎬 Thư Viện Video (9:16)
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: #e2e8f0;">
+                                    <input type="checkbox" class="mod-chk" value="social_autopost" checked> 🚀 Auto Post Social Kênh
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: #e2e8f0;">
+                                    <input type="checkbox" class="mod-chk" value="engine_settings"> ⚙️ Cấu Hình Luồng & API
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" style="margin-top: 16px;">
+                            <i class="fa-solid fa-plus"></i> Tạo Mới License Key
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Licenses Table -->
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-list-ul"></i> Danh Sách Bản Quyền & MAC ID Đã Kích Hoạt</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Email User</th>
+                                <th>License Key</th>
+                                <th>Gói Cước</th>
+                                <th>Modules Cho Phép</th>
+                                <th>Thiết Bị Binding</th>
+                                <th>Hạn Sử Dụng</th>
+                                <th>Trạng Thái</th>
+                                <th>Hành Động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="licenses-table-body">
+                            <tr><td colspan="8" style="text-align:center;">Đang tải danh sách...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 3: Prompt History -->
+            <div id="tab-prompts" class="tab-panel">
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-clock-rotate-left"></i> Nhật Ký Chạy Video Prompt Toàn Hệ Thống</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>User ID</th>
+                                <th>MAC ID</th>
+                                <th>Tỷ Lệ</th>
+                                <th>Model</th>
+                                <th>Nội Dung Veo Prompt</th>
+                                <th>Thời Gian</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prompts-table-body">
+                            <tr><td colspan="7" style="text-align:center;">Đang tải nhật ký...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- 🔒 Modal Đăng Nhập Trang Admin (Chỉ cần Tài khoản & Mật khẩu) -->
+    <div id="admin-auth-overlay" class="modal-overlay" style="display: none;">
+        <div class="modal-card" style="max-width: 420px; width: 90%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 28px; color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 12px;">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <h2 style="font-size: 20px; font-weight: 700;">Admin Control Panel</h2>
+                <p style="font-size: 13px; color: #94a3b8; margin-top: 4px;">Vui lòng đăng nhập tài khoản Quản Trị Hệ Thống</p>
+            </div>
+
+            <div id="admin-login-error" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px;"></div>
+
+            <form id="admin-login-form">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">Email Admin</label>
+                    <input type="email" id="admin-email-input" value="admin@veostudio.ai" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 14px; outline: none;" required>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">Mật Khẩu</label>
+                    <input type="password" id="admin-password-input" value="admin123" style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 14px; outline: none;" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 15px; font-weight: 600; justify-content: center;">
+                    <i class="fa-solid fa-lock-open"></i> Đăng Nhập Quản Trị
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ⚙️ Popup Modal Chỉnh Sửa Phân Quyền Module cho License -->
+    <div id="edit-modules-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card" style="max-width: 520px; width: 90%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <h3 style="font-size: 16px; font-weight: 700; color: #818cf8; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-sliders"></i> Chỉnh Sửa Phân Quyền Module
+                </h3>
+                <button onclick="closeEditModulesModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <p style="font-size: 13px; color: #cbd5e1; margin-bottom: 16px;">Tích chọn các tính năng/module cho phép License Key này truy cập:</p>
+            
+            <input type="hidden" id="edit-license-id">
+            
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; background: rgba(255,255,255,0.03); padding: 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
+                <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; color: #f8fafc;">
+                    <input type="checkbox" id="edit-mod-veo" value="veo_generate" style="width: 18px; height: 18px; accent-color: #6366f1;">
+                    ⚡ <strong>Tạo Video Prompt</strong> (Google Veo 2 / Labs API)
+                </label>
+                <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; color: #f8fafc;">
+                    <input type="checkbox" id="edit-mod-tiktok" value="tiktok_clone" style="width: 18px; height: 18px; accent-color: #6366f1;">
+                    📋 <strong>Clone Video TikTok</strong> (Tải hàng loạt kịch bản)
+                </label>
+                <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; color: #f8fafc;">
+                    <input type="checkbox" id="edit-mod-library" value="video_library" style="width: 18px; height: 18px; accent-color: #6366f1;">
+                    🎬 <strong>Thư Viện Video (9:16)</strong> (Render Sub & TTS)
+                </label>
+                <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; color: #f8fafc;">
+                    <input type="checkbox" id="edit-mod-social" value="social_autopost" style="width: 18px; height: 18px; accent-color: #6366f1;">
+                    🚀 <strong>Auto Post Social</strong> (Facebook, TikTok, X)
+                </label>
+                <label style="display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; color: #f8fafc;">
+                    <input type="checkbox" id="edit-mod-settings" value="engine_settings" style="width: 18px; height: 18px; accent-color: #6366f1;">
+                    ⚙️ <strong>Cấu Hình Luồng & API</strong> (Cài đặt Engine)
+                </label>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" onclick="closeEditModulesModal()" class="btn" style="background: rgba(255,255,255,0.1); color: #e2e8f0; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer;">
+                    Hủy
+                </button>
+                <button type="button" onclick="saveEditModules()" class="btn btn-primary" style="padding: 10px 20px; font-weight: 600;">
+                    <i class="fa-solid fa-floppy-disk"></i> Lưu Thay Đổi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🔑 Popup Modal Reset Mật Khẩu User -->
+    <div id="reset-password-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card" style="max-width: 440px; width: 90%; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 24px; color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <h3 style="font-size: 16px; font-weight: 700; color: #fbbf24; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-key"></i> Đổi Mật Khẩu Khách Hàng
+                </h3>
+                <button onclick="closeResetPasswordModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 18px; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <p style="font-size: 13px; color: #cbd5e1; margin-bottom: 14px;">Đặt lại mật khẩu mới cho tài khoản <strong id="reset-pwd-email-display" style="color: #60a5fa;"></strong>:</p>
+            
+            <input type="hidden" id="reset-pwd-user-id">
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">Mật Khẩu Mới</label>
+                <input type="text" id="reset-pwd-input" placeholder="Nhập mật khẩu mới..." style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; font-size: 14px; outline: none;" required>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" onclick="closeResetPasswordModal()" class="btn" style="background: rgba(255,255,255,0.1); color: #e2e8f0; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer;">
+                    Hủy
+                </button>
+                <button type="button" onclick="submitResetPassword()" class="btn btn-primary" style="background: #f59e0b; border-color: #d97706; padding: 10px 20px; font-weight: 600;">
+                    <i class="fa-solid fa-check"></i> Đổi Mật Khẩu
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js?v=2.0"></script>
+</body>
+</html>
+

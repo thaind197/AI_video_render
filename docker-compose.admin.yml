@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: ai_video_postgres
+    container_name: veostudio_postgres
     environment:
       POSTGRES_DB: veostudio
       POSTGRES_USER: postgres
@@ -11,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_admin_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -19,26 +19,11 @@ services:
       timeout: 5s
       retries: 5
 
-  app:
-    build: .
-    container_name: ai_video_render
-    ports:
-      - "8000:8000"
-    environment:
-      POSTGRES_URL: postgresql://postgres:postgrespassword@postgres:5432/veostudio
-    volumes:
-      - ./storage:/app/storage
-      - ./.env:/app/.env
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   webadmin:
     build:
       context: .
       dockerfile: Dockerfile.admin
-    container_name: ai_video_webadmin
+    container_name: veostudio_webadmin
     ports:
       - "8080:8080"
     environment:
@@ -54,12 +39,11 @@ services:
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: ai_video_tunnel
+    container_name: veostudio_admin_tunnel
     command: tunnel --url http://webadmin:8080
     restart: unless-stopped
     depends_on:
       - webadmin
 
 volumes:
-  postgres_data:
-
+  postgres_admin_data:

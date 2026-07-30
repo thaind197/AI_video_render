@@ -59,6 +59,15 @@ class SafeWriter:
             except Exception:
                 pass
 
+if sys.platform == "win32":
+    try:
+        if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 if sys.stdout is None or not hasattr(sys.stdout, 'write'):
     sys.stdout = io.StringIO()
 else:
@@ -221,7 +230,8 @@ def main():
             write_log(f"Version check error (non-fatal): {ve}")
 
         # Mở cửa sổ trình duyệt dạng App Mode
-        target_url = f"http://127.0.0.1:{port}/"
+        target_url = f"http://127.0.0.1:{port}/?t={int(time.time())}"
+
         browser_bin = find_browser_exe()
 
         if browser_bin:
@@ -233,7 +243,8 @@ def main():
                 browser_bin,
                 f"--app={target_url}",
                 f"--user-data-dir={user_data}",
-                "--window-size=1420,920",
+                "--start-maximized",
+                "--window-size=1600,950",
                 "--disable-features=Translate",
                 "--no-first-run",
                 "--no-default-browser-check",

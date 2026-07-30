@@ -1,7 +1,237 @@
 const API_BASE = ""; // Same origin / Relative path
 
-let currentJobs = [];
-let isEngineRunning = false;
+// ── Subscription & Licensing Auth Manager ────────────────────────────────
+let authCheckInterval = null;
+
+async function checkAuthStatus() {
+    try {
+        const res = await fetch('/api/auth/status');
+        const data = await res.json();
+        
+        const overlay = document.getElementById('auth-login-overlay');
+        const macInput = document.getElementById('login-mac-id');
+        if (macInput && data.mac_id) {
+            macInput.value = data.mac_id;
+        }
+
+        if (data.authenticated) {
+            if (overlay) overlay.classList.add('hidden');
+            updateUserBadge(data.user, data.license);
+            startHeartbeatTimer();
+        } else {
+            if (overlay) overlay.classList.remove('hidden');
+            hideUserBadge();
+            stopHeartbeatTimer();
+        }
+    } catch (e) {
+        console.error("Lỗi kiểm tra auth status:", e);
+    }
+}
+
+function updateUserBadge(user, license) {
+    const badge = document.getElementById('header-user-badge');
+    const emailEl = document.getElementById('badge-user-email');
+    const tierEl = document.getElementById('badge-user-tier');
+    
+    if (badge && user) {
+        if (emailEl) emailEl.textContent = user.email || 'User';
+        if (tierEl) tierEl.textContent = (license && license.tier) ? license.tier.toUpperCase() : 'PRO';
+        badge.style.display = 'inline-flex';
+    }
+    if (license) {
+        applyModulePermissions(license.allowed_modules);
+    }
+}
+
+function applyModulePermissions(allowedModules) {
+    if (!allowedModules || !Array.isArray(allowedModules)) {
+        allowedModules = ["veo_generate", "tiktok_clone", "video_library", "social_autopost", "engine_settings"];
+    }
+
+    const tabModuleMap = {
+        'dashboard': null,
+        'generate': 'veo_generate',
+        'clone': 'tiktok_clone',
+        'library': 'video_library',
+        'social': 'social_autopost',
+        'settings': 'engine_settings'
+    };
+
+    const navItems = document.querySelectorAll('.sidebar .nav-item');
+    navItems.forEach(item => {
+        const tabKey = item.getAttribute('data-tab');
+        const requiredModule = tabModuleMap[tabKey];
+
+        if (requiredModule && !allowedModules.includes(requiredModule)) {
+            item.classList.add('locked-module');
+            if (!item.querySelector('.lock-badge')) {
+                const lockSpan = document.createElement('span');
+                lockSpan.className = 'lock-badge';
+                lockSpan.style.marginLeft = 'auto';
+                lockSpan.innerHTML = '<i class="fa-solid fa-lock" style="color:#ef4444; font-size:12px;"></i>';
+                item.appendChild(lockSpan);
+            }
+        } else {
+            item.classList.remove('locked-module');
+            const lockSpan = item.querySelector('.lock-badge');
+            if (lockSpan) lockSpan.remove();
+        }
+    });
+}
+
+// Intercept click on locked modules
+document.addEventListener('click', (e) => {
+    const navItem = e.target.closest('.sidebar .nav-item');
+    if (navItem && navItem.classList.contains('locked-module')) {
+        e.preventDefault();
+        e.stopPropagation();
+        showToast("Tính năng này chưa được kích hoạt cho gói cước của bạn. Vui lòng liên hệ Admin để nâng cấp!", "warning");
+    }
+}, true);
+
+function hideUserBadge() {
+    const badge = document.getElementById('header-user-badge');
+    if (badge) badge.style.display = 'none';
+}
+
+function startHeartbeatTimer() {
+    if (authCheckInterval) clearInterval(authCheckInterval);
+    authCheckInterval = setInterval(async () => {
+        try {
+            const res = await fetch('/api/auth/heartbeat');
+            const data = await res.json();
+            if (data && data.valid === false) {
+                showToast(data.reason || "Phiên đăng nhập đã hết hạn hoặc bị khóa!", "error");
+                const overlay = document.getElementById('auth-login-overlay');
+                if (overlay) overlay.classList.remove('hidden');
+                hideUserBadge();
+                stopHeartbeatTimer();
+            }
+        } catch(e) {}
+    }, 60000); // 60 seconds
+}
+
+function stopHeartbeatTimer() {
+    if (authCheckInterval) {
+        clearInterval(authCheckInterval);
+        authCheckInterval = null;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    checkAuthStatus();
+
+    const toggleLicenseBtn = document.getElementById('btn-toggle-license-input');
+    if (toggleLicenseBtn) {
+        toggleLicenseBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const licenseGroup = document.getElementById('login-license-group');
+            const licenseInput = document.getElementById('login-license-key');
+            if (licenseGroup) {
+                const isHidden = licenseGroup.style.display === 'none';
+                licenseGroup.style.display = isHidden ? 'block' : 'none';
+                if (isHidden) {
+                    if (licenseInput) {
+                        licenseInput.setAttribute('required', 'true');
+                        licenseInput.focus();
+                    }
+                    toggleLicenseBtn.textContent = 'Ẩn ô nhập License Key';
+                } else {
+                    if (licenseInput) licenseInput.removeAttribute('required');
+                    toggleLicenseBtn.textContent = 'Nhập mã License Key mới?';
+                }
+            }
+        });
+    }
+
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const alertBox = document.getElementById('login-alert-box');
+            const submitBtn = document.getElementById('btn-login-submit');
+            
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            const licenseInput = document.getElementById('login-license-key');
+            const licenseGroup = document.getElementById('login-license-group');
+            const license_key = (licenseGroup && licenseGroup.style.display === 'none') ? "" : (licenseInput ? licenseInput.value.trim() : "");
+
+            if (alertBox) {
+                alertBox.className = 'login-alert';
+                alertBox.style.display = 'none';
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang xác thực...';
+            }
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, license_key })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.status === 'success') {
+                    showToast("Đăng nhập thành công!", "success");
+                    const overlay = document.getElementById('auth-login-overlay');
+                    if (overlay) overlay.classList.add('hidden');
+                    updateUserBadge(data.user, data.license);
+                    startHeartbeatTimer();
+                } else {
+                    const errDetail = data.detail || data.message || "Đăng nhập thất bại. Kiểm tra lại thông tin!";
+                    if ((errDetail.includes("License Key") || errDetail.includes("kích hoạt")) && licenseGroup) {
+                        licenseGroup.style.display = 'block';
+                        if (licenseInput) licenseInput.focus();
+                    }
+                    if (alertBox) {
+                        alertBox.textContent = errDetail;
+                        alertBox.className = 'login-alert error';
+                        alertBox.style.display = 'block';
+                    } else {
+                        showToast(errDetail, "error");
+                    }
+                }
+            } catch (err) {
+                if (alertBox) {
+                    alertBox.textContent = "Không kết nối được tới server xác thực!";
+                    alertBox.className = 'login-alert error';
+                    alertBox.style.display = 'block';
+                }
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Đăng Nhập';
+                }
+            }
+        });
+    }
+
+    const copyMacBtn = document.getElementById('btn-copy-mac-id');
+    if (copyMacBtn) {
+        copyMacBtn.addEventListener('click', () => {
+            const macInput = document.getElementById('login-mac-id');
+            if (macInput && macInput.value) {
+                navigator.clipboard.writeText(macInput.value);
+                showToast("Đã sao chép Mã Máy (MAC ID) vào Clipboard!", "success");
+            }
+        });
+    }
+
+    const logoutBtn = document.getElementById('btn-header-logout');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                showToast("Đã đăng xuất tài khoản", "info");
+                checkAuthStatus();
+            } catch(e){}
+        });
+    }
+});
 
 // ── Global Fetch Interceptor: bắt 403 is_blocked từ middleware ──────────
 // Khi version cũ, mọi POST/PUT/DELETE request sẽ bị middleware trả 403.
@@ -606,11 +836,34 @@ function updateConcatToolbarUI() {
     const btnDelete = document.getElementById("btn-bulk-delete");
     const btnDeleteSelected = document.getElementById("btn-delete-selected");
     const count = selectedConcatJobIds.size;
+    const selectedArray = Array.from(selectedConcatJobIds);
+
+    // Cập nhật huy hiệu thứ tự đã chọn (#1, #2, #3...) trên từng thẻ video
+    document.querySelectorAll(".video-card-checkbox").forEach(cb => {
+        const jid = parseInt(cb.getAttribute("data-job-id"));
+        const card = cb.closest(".video-card-916");
+        if (card) {
+            let orderBadge = card.querySelector(".selection-order-badge");
+            const orderIdx = selectedArray.indexOf(jid);
+            if (orderIdx !== -1) {
+                if (!orderBadge) {
+                    orderBadge = document.createElement("span");
+                    orderBadge.className = "selection-order-badge";
+                    orderBadge.style.cssText = "position: absolute; top: 10px; right: 10px; background: linear-gradient(135deg, #1890ff, #096dd9); color: #fff; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 700; z-index: 5; box-shadow: 0 2px 6px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.3);";
+                    card.appendChild(orderBadge);
+                }
+                orderBadge.textContent = `#${orderIdx + 1}`;
+                orderBadge.style.display = "inline-block";
+            } else if (orderBadge) {
+                orderBadge.style.display = "none";
+            }
+        }
+    });
 
     badges.forEach(badge => {
         if (count > 0) {
             badge.style.display = "inline-block";
-            badge.textContent = `Đã chọn: ${count} video`;
+            badge.textContent = `Đã chọn: ${count} video (Theo thứ tự tích chọn)`;
         } else {
             badge.style.display = "none";
         }
@@ -633,10 +886,10 @@ function updateConcatToolbarUI() {
     if (btnConcat) {
         if (count >= 2) {
             btnConcat.disabled = false;
-            btnConcat.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Ghép ${count} Video Thành 1 Video Dài`;
+            btnConcat.innerHTML = `<i class="fa-solid fa-layer-group"></i> Ghép ${count} Video Đã Chọn (FFmpeg)`;
         } else {
             btnConcat.disabled = true;
-            btnConcat.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Ghép Video Đã Chọn`;
+            btnConcat.innerHTML = `<i class="fa-solid fa-layer-group"></i> Ghép Video (FFmpeg)`;
         }
     }
 }
@@ -961,6 +1214,11 @@ function initForms() {
             const veoModel = document.getElementById("prompt-veo-model") ? document.getElementById("prompt-veo-model").value : "veo-3.1-lite-generate-preview";
             const quality = document.getElementById("labs-quality-select") ? document.getElementById("labs-quality-select").value : "1080p";
 
+            const subCb = document.getElementById("labs-subtitle-checkbox");
+            const voiceCb = document.getElementById("labs-voiceover-checkbox");
+            const addSubtitle = subCb ? subCb.checked : true;
+            const addVoiceover = voiceCb ? voiceCb.checked : true;
+
             try {
                 const res = await fetch(`${API_BASE}/api/generate-prompt`, {
                     method: "POST",
@@ -976,7 +1234,9 @@ function initForms() {
                         duration: duration,
                         variants: variants,
                         veo_model: veoModel,
-                        quality: quality
+                        quality: quality,
+                        add_subtitle: addSubtitle,
+                        add_voiceover: addVoiceover
                     })
                 });
                 const data = await res.json();
@@ -1425,6 +1685,18 @@ async function fetchSettings() {
         // Veo strict model
         const strictEl = document.getElementById("settings-veo-strict");
         if (strictEl && data.veo_strict_model !== undefined) strictEl.checked = !!data.veo_strict_model;
+
+        // Default add subtitle & voiceover
+        const subDefEl = document.getElementById("settings-default-add-subtitle");
+        const voiceDefEl = document.getElementById("settings-default-add-voiceover");
+        if (subDefEl && data.default_add_subtitle !== undefined) subDefEl.checked = !!data.default_add_subtitle;
+        if (voiceDefEl && data.default_add_voiceover !== undefined) voiceDefEl.checked = !!data.default_add_voiceover;
+
+        // Auto update Generate tab checkboxes from defaults
+        const labsSub = document.getElementById("labs-subtitle-checkbox");
+        const labsVoice = document.getElementById("labs-voiceover-checkbox");
+        if (labsSub && data.default_add_subtitle !== undefined) labsSub.checked = !!data.default_add_subtitle;
+        if (labsVoice && data.default_add_voiceover !== undefined) labsVoice.checked = !!data.default_add_voiceover;
     } catch (err) {
         console.warn("Lỗi fetch cài đặt:", err);
     }
@@ -1499,6 +1771,11 @@ function initSettingsForm() {
             const strictEl = document.getElementById("settings-veo-strict");
             const veoStrictModel = strictEl ? strictEl.checked : true;
 
+            const subDefEl = document.getElementById("settings-default-add-subtitle");
+            const voiceDefEl = document.getElementById("settings-default-add-voiceover");
+            const defaultAddSubtitle = subDefEl ? subDefEl.checked : true;
+            const defaultAddVoiceover = voiceDefEl ? voiceDefEl.checked : true;
+
             try {
                 const res = await fetch(`${API_BASE}/api/settings`, {
                     method: "POST",
@@ -1515,7 +1792,9 @@ function initSettingsForm() {
                         require_confirmation: requireConfirmation,
                         veo_duration: veoDuration,
                         veo_variants: veoVariants,
-                        veo_strict_model: veoStrictModel
+                        veo_strict_model: veoStrictModel,
+                        default_add_subtitle: defaultAddSubtitle,
+                        default_add_voiceover: defaultAddVoiceover
                     })
                 });
                 const data = await res.json();
@@ -2180,7 +2459,9 @@ async function generateViaLabsGoogle(promptText, quality) {
                     duration: duration,
                     variants: variants,
                     veo_model: veoModel,
-                    quality: qualityVal
+                    quality: qualityVal,
+                    add_subtitle: addSub,
+                    add_voiceover: addVoice
                 })
             });
             const data = await res.json();
@@ -2354,4 +2635,20 @@ document.addEventListener("DOMContentLoaded", () => {
         checkLabsGoogleStatus();
     }
 });
+
+function toggleLicenseInput(e) {
+    if (e) e.preventDefault();
+    const licenseGroup = document.getElementById('login-license-group');
+    const licenseInput = document.getElementById('login-license-key');
+    if (!licenseGroup) return;
+
+    if (licenseGroup.style.display === 'none' || !licenseGroup.style.display) {
+        licenseGroup.style.display = 'block';
+        if (licenseInput) licenseInput.focus();
+    } else {
+        licenseGroup.style.display = 'none';
+    }
+}
+window.toggleLicenseInput = toggleLicenseInput;
+
 

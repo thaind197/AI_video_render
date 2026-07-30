@@ -314,8 +314,8 @@ class VideoCloner:
 
         try:
             url = job['source_input']
-            add_voiceover = bool(job.get('add_voiceover', 1))
-            add_subtitle = bool(job.get('add_subtitle', 1))
+            add_voiceover = str(job.get('add_voiceover', '1')).lower() not in ('0', 'false', 'none', '', '0.0')
+            add_subtitle = str(job.get('add_subtitle', '1')).lower() not in ('0', 'false', 'none', '', '0.0')
 
             logger.info(f"Đang tải video clone #{job_id}: {url} | voiceover={add_voiceover} | subtitle={add_subtitle}")
             video_path = self.download_video(url, job_id)

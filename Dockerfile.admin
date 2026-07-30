@@ -1,0 +1,25 @@
+# Lightweight Python image for Web Admin & Licensing Server
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install PostgreSQL client libraries and system build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application source
+COPY . .
+
+# Create storage directories
+RUN mkdir -p storage/logs storage/browser_sessions
+
+EXPOSE 8080
+
+CMD ["python", "admin_server.py"]
